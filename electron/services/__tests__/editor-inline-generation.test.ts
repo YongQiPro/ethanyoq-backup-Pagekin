@@ -226,15 +226,15 @@ const batchInput = {
   { id: '批注二', from: batchDocument.length - 1, to: batchDocument.length, selectedText: '乙', instruction: '删掉这个字' },
  ],
 }
-it('多处批注冻结为一个完整章节任务，一次执行并可在重开后恢复', async () => {
+it('多处批注冻结为一个完整章节任务，一次执行并可在重开后恢复，原稿身份一并记下', async () => {
  const f = fixture(async (_r, o) => { o.onVisible({ kind: 'delta', text: '修改后的完整章节' }); return { finishReason: 'stop', usage: null } })
- const recovery = f.owner.beginEditorInline({ input: batchInput, modelId: 'synthetic', uiActionNonce: '统一批注修改' })
+ const recovery = f.owner.beginEditorInline({ input: { ...batchInput, filePath: 'drafts/3-1.md' }, modelId: 'synthetic', uiActionNonce: '统一批注修改' })
  await f.owner.executeEditorInline(recovery.view.handle)
  expect(f.spy).toHaveBeenCalledTimes(1)
  const { task } = f.spy.mock.calls[0]![0] as { task: { messages: { role: string; content: string }[] } }
  const sent = task.messages.map(message => message.content).join('\n')
  for (const expected of ['改成第一人称', '删掉这个字', '完整章节', batchDocument]) expect(sent).toContain(expected)
- expect(f.reopenStorage().readEditorInlineRecovery(recovery.view.handle).context).toMatchObject(batchInput)
+ expect(f.reopenStorage().readEditorInlineRecovery(recovery.view.handle).context).toMatchObject({ ...batchInput, filePath: 'drafts/3-1.md' })
 })
 it('同一段原文在章里出现多次时，提示词写明批注的是第几处', async () => {
  const repeated = '灯亮了。风停了。灯亮了。'
