@@ -136,7 +136,7 @@ it('批注的原文滚出纸面后点「定位批注」：原文滚回可见范�
   await expect.poll(visible).toBe(true)
 })
 
-async function openAnnotationReview(reviewed = false) {
+async function openAnnotationReview(reviewed = false, beforeAnnotate?: () => Promise<void>) {
   const answer = backend.invoke.getMockImplementation()!
   let recovery: { view: object; modelId: string; sourceStatus: string; context: object } | null = null
   backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
@@ -163,6 +163,7 @@ async function openAnnotationReview(reviewed = false) {
     return answer(channel, ...args)
   })
   await openChapter({ reviewed, content: ORIGINAL })
+  await beforeAnnotate?.()
   await annotate('他第三次展开信纸。', '写出信纸上的字')
   await act(async () => page.getByRole('button', { name: '统一修改（1）' }).click())
   const review = page.getByRole('region', { name: '批注修改对比' })
@@ -270,5 +271,31 @@ it('报告让位后批注随修稿合并收走，回到正文再加批注、用�
   await act(async () => dock().getByRole('button', { name: '清空' }).click())
 
   await expect.element(dock()).not.toBeInTheDocument()
+  expect(useStageStore.getState().sheet).toBeNull()
+})
+
+it('报告开着时进入专注再加批注，用完退出专注：报告回到侧栏', async () => {
+  await openChapter({ reviewed: true })
+  await expect.element(reviewSheet()).toBeVisible()
+  await act(async () => useStageStore.setState({ focus: true }))
+  await annotate('他第三次展开信纸。', '写出信纸上的字')
+
+  await act(async () => dock().getByRole('button', { name: '清空' }).click())
+  await act(async () => useStageStore.setState({ focus: false }))
+
+  await expect.element(reviewSheet()).toBeVisible()
+})
+
+it('作者先关掉审稿报告再加批注，统一修改接受全部写进正文后：侧栏仍空着', async () => {
+  const review = await openAnnotationReview(true, async () => {
+    await act(async () => page.getByRole('button', { name: '关闭审稿报告' }).click())
+    await expect.element(reviewSheet()).not.toBeInTheDocument()
+  })
+
+  await act(async () => review.getByRole('button', { name: '接受全部' }).click())
+
+  await expect.element(review).not.toBeInTheDocument()
+  await expect.element(page.getByText('他第三次展开信纸，上面只有两个字：等我。')).toBeVisible()
+  await expect.element(reviewSheet()).not.toBeInTheDocument()
   expect(useStageStore.getState().sheet).toBeNull()
 })
