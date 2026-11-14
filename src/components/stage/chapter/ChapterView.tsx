@@ -126,7 +126,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
     reload()
   }, [request, filePath, reload])
 
-  // 请求只交给作者看得见的编辑器：拿到后清掉，重挂不再重开气泡；合并视图或批注审阅盖着时留着等它露出来。
+  // 请求只交给看得见的编辑器；被合并视图或批注审阅盖住时留在 store，露出后再交。交接后清掉，重挂不会重开气泡。
   const [reviewing, setReviewing] = useState(false)
   const covered = draft.mergeData !== null || reviewing
   const recovery = useStageStore(s => !covered && s.selectionRequest?.filePath === filePath && session && sameProjectSessionContext(s.selectionRequest.session, session)

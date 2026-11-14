@@ -270,7 +270,7 @@ export default function CodeMirrorEditor({
       view?.dispatch({ selection: { anchor: from, head: to }, effects: EditorView.scrollIntoView(from, { y: 'center' }) })
       view?.focus()
       const coords = view?.coordsAtPos(from)
-      // 滚动还没生效，位置测出在视口里之前不算作者看见。
+      // inView 由随后的 updatePosition 测出，测出前不发回执。
       setBubblePos({ top: coords?.top ?? 150, left: coords?.left ?? 200, inView: false })
       setBubbleOpen(true)
       if (resumable) void handleResumeAI()
