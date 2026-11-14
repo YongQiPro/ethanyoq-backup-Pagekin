@@ -40,13 +40,15 @@ function validAnnotations(input: EditorInlineInput): boolean {
 
 export function validateEditorInlineInput(input: EditorInlineInput): EditorInlineInput {
   if (!input || typeof input !== 'object' || Array.isArray(input)
-    || Object.keys(input).some(key => !['action', 'documentText', 'from', 'to', 'selectedText', 'instruction', 'annotations'].includes(key))
+    || Object.keys(input).some(key => !['action', 'documentText', 'from', 'to', 'selectedText', 'instruction', 'annotations', 'filePath'].includes(key))
+    || input.filePath !== undefined && (typeof input.filePath !== 'string' || !input.filePath)
     || !validInstruction(input) || typeof input.documentText !== 'string' || typeof input.selectedText !== 'string'
     || !Number.isSafeInteger(input.from) || !Number.isSafeInteger(input.to) || input.from < 0 || input.to <= input.from
     || input.to > input.documentText.length || input.documentText.slice(input.from, input.to) !== input.selectedText
     || !validAnnotations(input)
     || Buffer.byteLength(input.documentText, 'utf8') > 8 * 1024 * 1024) throw new Error('GENERATION_EDITOR_INPUT_INVALID')
-  return structuredClone(input)
+  const { filePath, ...rest } = input
+  return structuredClone(filePath === undefined ? rest : input)
 }
 export function buildEditorInlineContext(input: EditorInlineInput, writingLanguage: WritingLanguage, template: PromptTemplate): EditorInlineContext {
   const valid = validateEditorInlineInput(input)
@@ -61,7 +63,8 @@ export function readEditorInlineContext(run: DurableGenerationRun): EditorInline
   const input = validateEditorInlineInput(run.binding.sourceManifest.editorInlineInput as EditorInlineInput)
   const frozen = { action: context.action, documentText: context.documentText, from: context.from, to: context.to, selectedText: context.selectedText,
     ...(context.action === 'instruct' ? { instruction: context.instruction } : {}),
-    ...(context.action === 'batch-instruct' ? { annotations: context.annotations } : {}) }
+    ...(context.action === 'batch-instruct' ? { annotations: context.annotations } : {}),
+    ...(context.filePath !== undefined ? { filePath: context.filePath } : {}) }
   if (!isDeepStrictEqual(input, frozen)) throw new Error('GENERATION_EDITOR_CONTEXT_INVALID')
   return structuredClone(context)
 }
