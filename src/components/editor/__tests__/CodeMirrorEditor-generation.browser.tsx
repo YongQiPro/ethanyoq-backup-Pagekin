@@ -619,6 +619,30 @@ describe('CodeMirror editor AI generation boundary', () => {
     expect(container.querySelector('.cm-selbar')?.getBoundingClientRect().bottom ?? -1).toBeLessThanOrEqual(0)
   })
 
+  it('原选区滚出视口时生成完成不回执，滚回来看见预览才回执', async () => {
+    deferStream = true
+    const answer = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => channel === 'editor-inline:delivered' ? undefined : answer(channel, ...args))
+    const delivered = () => invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:delivered')
+    await act(async () => root.render(<>
+      <input aria-label="外部输入" />
+      <div data-testid="chapter-scroller" style={{ height: 300, overflow: 'auto' }}><CodeMirrorEditor content={LONG_CHAPTER} mode="prose" fitContent /></div>
+    </>))
+    await selectLine('第1段原文', { exact: true })
+    await act(async () => page.getByRole('button', { name: '润色' }).click())
+    await act(async () => page.getByRole('textbox', { name: '外部输入' }).fill('输入'))
+    await scrollChapterTo(1200)
+
+    await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: '第一段新文', finishReason: 'stop' } as never))
+    await nextFrames()
+    expect(container.querySelector('.cm-selbar')?.getBoundingClientRect().bottom ?? -1).toBeLessThanOrEqual(0)
+    expect(delivered()).toEqual([])
+
+    await scrollChapterTo(0)
+    await expect.element(page.getByText('第一段新文')).toBeInViewport()
+    await vi.waitFor(() => expect(delivered()).toHaveLength(1))
+  })
+
   it('lets the note form leave with its selection and keeps the typed note on return', async () => {
     await act(async () => root.render(
       <div data-testid="chapter-scroller" style={{ height: 300, overflow: 'auto' }}><CodeMirrorEditor content={LONG_CHAPTER} mode="prose" fitContent /></div>,
