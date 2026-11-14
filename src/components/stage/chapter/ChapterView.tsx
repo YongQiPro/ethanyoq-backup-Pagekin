@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { DRAFT_STATUS_INFO } from '../../../shared/draft-status'
 import { countDraftUnits } from '../../../shared/draft-units'
 import { formatResourceUri } from '../../../shared/project-paths'
@@ -6,7 +6,7 @@ import type { EditorTab } from '../../../stores/editor-store'
 import { readDraftBody } from '../../../stores/draft-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { chapterPhase } from '../../../stores/navigation/stage-progress'
-import { useStageStore } from '../../../stores/navigation/stage-store'
+import { useStageStore, type StageSheet } from '../../../stores/navigation/stage-store'
 import { useProjectStore } from '../../../stores/project-store'
 import type { ReviewEntry } from '../../../services/draft-index'
 import { ipc } from '../../../services/ipc-client'
@@ -107,6 +107,8 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
   const target = useProjectStore(s => s.currentProject?.novelConfig.wordsPerChapter) || 0
   const [sheetSlot, setSheetSlot] = useState<HTMLDivElement | null>(null)
   const sheetFree = useStageStore(s => s.focus || s.sheet === null || (s.sheet.kind === 'review' && (s.sheet.filePath !== filePath || latest === null)))
+  // 批注坞顶掉的侧页，批注用完时放回；作者那时已开了别的就不动。
+  const sheetBeforeDock = useRef<StageSheet | null>(null)
 
   const facts = useStageStore(s => draft.meta && s.chapterFacts && session && sameProjectSessionContext(s.chapterFacts.session, session)
     ? s.chapterFacts.byDraft[draft.meta.id]
@@ -204,7 +206,16 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
                 onChange={draft.onBodyChange}
                 onSave={body => draft.save(body)}
                 annotationSlot={sheetFree ? sheetSlot : null}
-                onAnnotationAdded={() => useStageStore.setState({ sheet: null })}
+                onAnnotationAdded={first => {
+                  if (!sheetFree) sheetBeforeDock.current = useStageStore.getState().sheet
+                  else if (first) sheetBeforeDock.current = null
+                  useStageStore.setState({ sheet: null })
+                }}
+                onAnnotationsCleared={() => {
+                  const sheet = sheetBeforeDock.current
+                  sheetBeforeDock.current = null
+                  if (sheet && useStageStore.getState().sheet === null) useStageStore.setState({ sheet })
+                }}
                 onReviewChange={setReviewing}
                 chapterAnnotations
                 onCommitAnnotations={async (before, after, annotations) => {

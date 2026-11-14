@@ -256,3 +256,19 @@ it('批注期间打开过报告又关掉，用完后：放回批注前开着的�
 
   await expect.element(reviewSheet()).toBeVisible()
 })
+
+it('报告让位后批注随修稿合并收走，回到正文再加批注、用完：不放回早先那一页', async () => {
+  await openChapter({ reviewed: true })
+  await annotate('他第三次展开信纸。', '写出信纸上的字')
+  const filePath = useEditorStore.getState().tabs.find(tab => tab.id === useEditorStore.getState().activeTabId)!.filePath!
+  await act(async () => { backend.addRevision(backend.state.drafts.at(-1)!); useStageStore.setState({ chapterRequest: { session: SESSION, filePath } }) })
+  await act(async () => page.getByRole('button', { name: '稍后再合并' }).click())
+  await expect.element(page.getByRole('region', { name: '修稿合并' })).not.toBeInTheDocument()
+  await expect.element(reviewSheet()).not.toBeInTheDocument()
+  await annotate('他第三次展开信纸。', '写出信纸上的字')
+
+  await act(async () => dock().getByRole('button', { name: '清空' }).click())
+
+  await expect.element(dock()).not.toBeInTheDocument()
+  expect(useStageStore.getState().sheet).toBeNull()
+})

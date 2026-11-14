@@ -52,7 +52,10 @@ export type CodeMirrorEditorProps = {
   paragraphIndent?: boolean
   /** 批注面板的停靠位置；不给时停在编辑器右侧，给 null 时不显示。 */
   annotationSlot?: HTMLElement | null
-  onAnnotationAdded?: () => void
+  /** first：这是第一条，批注面板刚出现。 */
+  onAnnotationAdded?: (first: boolean) => void
+  /** 批注从有到无：清空、删完或统一修改写进正文。卸载不算。 */
+  onAnnotationsCleared?: () => void
   /** 批注修改审阅摆出或收起，摆着时盖住正文。 */
   onReviewChange?: (open: boolean) => void
   chapterAnnotations?: boolean
@@ -118,6 +121,7 @@ export default function CodeMirrorEditor({
   paragraphIndent: indentParagraphs = false,
   annotationSlot,
   onAnnotationAdded,
+  onAnnotationsCleared,
   onReviewChange,
   chapterAnnotations = false,
 }: CodeMirrorEditorProps) {
@@ -297,6 +301,12 @@ export default function CodeMirrorEditor({
     onReviewChange?.(true)
     return () => onReviewChange?.(false)
   }, [onReviewChange, reviewing])
+  const annotated = annotations.length > 0
+  const wasAnnotated = useRef(false)
+  useEffect(() => {
+    if (wasAnnotated.current && !annotated) onAnnotationsCleared?.()
+    wasAnnotated.current = annotated
+  }, [annotated, onAnnotationsCleared])
 
   useEffect(() => () => {
     inlineRef.current?.detach()
@@ -646,7 +656,7 @@ export default function CodeMirrorEditor({
     setNoteDraft(null)
     setNoteError(null)
     setBubbleOpen(false)
-    onAnnotationAdded?.()
+    onAnnotationAdded?.(annotations.length === 0)
     view.contentDOM.focus({ preventScroll: true })
   }
 
