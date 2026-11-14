@@ -106,6 +106,17 @@ it('审稿报告开着时进入专注模式：报告随专注收起，批注坞�
   await expect.element(page.getByText('本章批注 · 1')).toBeVisible()
 })
 
+it('侧页记着本稿的审稿报告、本稿却没有审稿：报告画不出来，批注坞照常显示', async () => {
+  await openChapter({ reviewed: false })
+  await annotate('他第三次展开信纸。', '写出信纸上的字')
+  const filePath = useEditorStore.getState().tabs.find(tab => tab.id === useEditorStore.getState().activeTabId)!.filePath!
+
+  await act(async () => useStageStore.setState({ sheet: { kind: 'review', filePath } }))
+
+  await expect.element(reviewSheet()).not.toBeInTheDocument()
+  await expect.element(dock()).toBeVisible()
+})
+
 it('批注的原文滚出纸面后点「定位批注」：原文滚回可见范围，不压在吸顶的动作条下面', async () => {
   await openChapter({ reviewed: false, content: Array.from({ length: 60 }, (_, index) => `第 ${index + 1} 段：雨从傍晚开始就没有停过。`).join('\n\n') })
   await annotate('第 1 段：雨从傍晚开始就没有停过。', '写出雨声')
