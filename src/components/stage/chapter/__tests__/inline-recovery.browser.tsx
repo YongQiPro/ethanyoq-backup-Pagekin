@@ -521,6 +521,29 @@ describe('运行侧页「继续原选区任务」', () => {
     await expect.element(review).toBeVisible()
   })
 
+  it('交接在批注修改审阅摆着时才写入（设置页未保存延后）：审阅盖着不交，取消审阅后气泡照常续跑', async () => {
+    await interruptedSelectionRun(ORIGINAL)
+    await withAnnotationReviewBackend()
+    await mount()
+    await openChapter()
+    await act(async () => page.getByText(SELECTED, { exact: true }).click({ clickCount: 3 }))
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill('写出信纸上的字'))
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('button', { name: '统一修改（1）' }).click())
+    const review = page.getByRole('region', { name: '批注修改对比' })
+    await expect.element(review).toBeVisible()
+
+    await act(async () => useStageStore.setState({ selectionRequest: { session: SESSION, filePath: chapterTab(3)!, handle, nonce: 1 } }))
+    await act(async () => new Promise(resolve => setTimeout(resolve, 100)))
+    expect(executions()).toBe(0)
+    expect(host!.querySelector('[role="toolbar"]')).toBeNull()
+
+    await act(async () => review.getByRole('button', { name: '取消' }).click())
+
+    await expect.element(page.getByRole('toolbar', { name: '选中文字的操作' }).getByText(SUGGESTION)).toBeVisible()
+  })
+
   it('第一次在气泡里读不出原运行，再从侧页点「继续原选区任务」会重新读取并续跑', async () => {
     await interruptedSelectionRun(ORIGINAL)
     const fixture = backend.invoke.getMockImplementation()!
