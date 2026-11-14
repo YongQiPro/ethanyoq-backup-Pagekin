@@ -79,7 +79,9 @@ export default function InlineAnnotationReview({ before, after, annotations, onC
         ? text('正文或来源已变化，这次修改不能保存。取消后可重新统一修改。', 'The chapter or its sources changed, so these edits cannot be saved. Cancel and run the revision again.')
         : code === 'DRAFT_NOT_EDITABLE'
           ? text('修改还在，但正文现在不能编辑，没有保存。等本章任务结束再点「接受全部」，或点「取消」放弃。', 'Your edits are still here, but the chapter cannot be edited right now, so nothing was saved. Click Accept all once the chapter task finishes, or Cancel to drop them.')
-          : text('保存版本失败，修改仍在当前页面，请重试。', 'Could not save the version. Your edits are still here; try again.'))
+          : code === 'DRAFT_NOT_WRITABLE'
+            ? text('这一稿已定稿或有了新版本，修改没有保存。点「取消」后到当前版本里改。', 'This draft was finalized or replaced by a newer version, so nothing was saved. Click Cancel and edit the current version.')
+            : text('保存版本失败，修改仍在当前页面，请重试。', 'Could not save the version. Your edits are still here; try again.'))
       commitGuard.current = false
     }
     finally { setCommitting(false) }
