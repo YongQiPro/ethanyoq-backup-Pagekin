@@ -236,6 +236,14 @@ it('多处批注冻结为一个完整章节任务，一次执行并可在重开�
  for (const expected of ['改成第一人称', '删掉这个字', '完整章节', batchDocument]) expect(sent).toContain(expected)
  expect(f.reopenStorage().readEditorInlineRecovery(recovery.view.handle).context).toMatchObject({ ...batchInput, filePath: 'drafts/3-1.md' })
 })
+it('批注统一修改的结果没回执前留在恢复列表，回执后不再列出', async () => {
+ const f = fixture(replying('修改后的完整章节', 'stop'))
+ const handle = f.owner.beginEditorInline({ input: batchInput, modelId: 'synthetic', uiActionNonce: '统一修改待送达' }).view.handle
+ await f.owner.executeEditorInline(handle)
+ expect(f.owner.listRecovery().editors.map(item => item.view.handle.runId)).toEqual([handle.runId])
+ f.owner.acknowledgeEditorInline(handle)
+ expect(f.reopenStorage().listRecovery().editors).toEqual([])
+})
 it('同一段原文在章里出现多次时，提示词写明批注的是第几处', async () => {
  const repeated = '灯亮了。风停了。灯亮了。'
  const twice = { action: 'batch-instruct' as const, documentText: repeated, from: 0, to: repeated.length, selectedText: repeated,
