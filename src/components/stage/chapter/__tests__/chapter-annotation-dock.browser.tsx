@@ -92,6 +92,20 @@ it('已审稿的稿在 1028px 下加批注：审稿报告让位给批注坞，�
   await expect.element(page.getByText('本章批注 · 1')).toBeVisible()
 })
 
+it('审稿报告开着时进入专注模式：报告随专注收起，批注坞回来，原批注仍可看', async () => {
+  await openChapter({ reviewed: true })
+  await annotate('他第三次展开信纸。', '写出信纸上的字')
+  await act(async () => page.getByRole('button', { name: '更多操作' }).click())
+  await act(async () => page.getByRole('menuitem', { name: '审稿报告' }).click())
+  await expect.element(dock()).not.toBeInTheDocument()
+
+  await act(async () => useStageStore.setState({ focus: true }))
+
+  await expect.element(reviewSheet()).not.toBeInTheDocument()
+  await expect.element(dock()).toBeVisible()
+  await expect.element(page.getByText('本章批注 · 1')).toBeVisible()
+})
+
 it('批注的原文滚出纸面后点「定位批注」：原文滚回可见范围，不压在吸顶的动作条下面', async () => {
   await openChapter({ reviewed: false, content: Array.from({ length: 60 }, (_, index) => `第 ${index + 1} 段：雨从傍晚开始就没有停过。`).join('\n\n') })
   await annotate('第 1 段：雨从傍晚开始就没有停过。', '写出雨声')
