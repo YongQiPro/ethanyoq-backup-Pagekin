@@ -136,7 +136,7 @@ it('批注的原文滚出纸面后点「定位批注」：原文滚回可见范�
   await expect.poll(visible).toBe(true)
 })
 
-async function openAnnotationReview(reviewed = false, beforeAnnotate?: () => Promise<void>) {
+async function startAnnotationRevision(reviewed = false, beforeAnnotate?: () => Promise<void>, executeGate?: Promise<unknown>) {
   const answer = backend.invoke.getMockImplementation()!
   let recovery: { view: object; modelId: string; sourceStatus: string; context: object } | null = null
   backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
@@ -148,6 +148,7 @@ async function openAnnotationReview(reviewed = false, beforeAnnotate?: () => Pro
       return recovery
     }
     if (channel === 'editor-inline:execute') {
+      await executeGate
       const content = ORIGINAL.replace('他第三次展开信纸。', '他第三次展开信纸，上面只有两个字：等我。')
       const run = { ...recovery!.view, status: 'completed', artifacts: [{ ...(recovery!.view as { handle: object }).handle, artifactId: 'proof', textHash: 'proof-hash', text: content, status: 'completed', compositionEligible: true }] }
       recovery = { ...recovery!, view: run }
@@ -166,6 +167,10 @@ async function openAnnotationReview(reviewed = false, beforeAnnotate?: () => Pro
   await beforeAnnotate?.()
   await annotate('他第三次展开信纸。', '写出信纸上的字')
   await act(async () => page.getByRole('button', { name: '统一修改（1）' }).click())
+}
+
+async function openAnnotationReview(reviewed = false, beforeAnnotate?: () => Promise<void>) {
+  await startAnnotationRevision(reviewed, beforeAnnotate)
   const review = page.getByRole('region', { name: '批注修改对比' })
   await expect.element(review).toBeVisible()
   return review
@@ -298,4 +303,77 @@ it('作者先关掉审稿报告再加批注，统一修改接受全部写进正�
   await expect.element(page.getByText('他第三次展开信纸，上面只有两个字：等我。')).toBeVisible()
   await expect.element(reviewSheet()).not.toBeInTheDocument()
   expect(useStageStore.getState().sheet).toBeNull()
+})
+
+const LOCK_HINT = '批注修改还在等你处理，修稿会冲掉它。先接受或取消批注修改。'
+const refineItem = async () => {
+  await act(async () => page.getByRole('button', { name: '更多操作' }).click())
+  const item = page.getByRole('menuitem', { name: '直接修稿…' })
+  await expect.element(item).toBeVisible()
+  return item
+}
+const closeMenu = () => act(async () => page.getByRole('button', { name: '更多操作' }).click())
+const reloadChapter = () => act(async () => useStageStore.setState({ chapterRequest: { session: SESSION, filePath: useEditorStore.getState().tabs.find(tab => tab.id === useEditorStore.getState().activeTabId)!.filePath! } }))
+
+it('已审稿的稿，批注修改审阅摆着：「按 N 项意见修稿」与「直接修稿」不可点并提示；点「取消」后恢复可点', async () => {
+  const review = await openAnnotationReview(true)
+  const revise = page.getByRole('button', { name: /项意见修稿$/ })
+
+  await expect.element(revise).toBeDisabled()
+  await expect.element(page.getByText(LOCK_HINT)).toBeVisible()
+  await expect.element(await refineItem()).toBeDisabled()
+  await closeMenu()
+
+  await act(async () => review.getByRole('button', { name: '取消' }).click())
+
+  await expect.element(revise).toBeEnabled()
+  await expect.element(page.getByText(LOCK_HINT)).not.toBeInTheDocument()
+  await expect.element(await refineItem()).toBeEnabled()
+})
+
+it('统一修改还在生成：「直接修稿」不可点并提示；取消生成后恢复可点', async () => {
+  await startAnnotationRevision(false, undefined, new Promise(() => {}))
+  await expect.element(page.getByText('正在生成', { exact: false })).toBeVisible()
+
+  await expect.element(page.getByText(LOCK_HINT)).toBeVisible()
+  await expect.element(await refineItem()).toBeDisabled()
+  await closeMenu()
+
+  await act(async () => page.getByRole('toolbar', { name: '选中文字的操作' }).getByRole('button', { name: '取消' }).click())
+
+  await expect.element(page.getByText(LOCK_HINT)).not.toBeInTheDocument()
+  await expect.element(await refineItem()).toBeEnabled()
+})
+
+it('有待合并的修稿、作者选了稍后再合并，批注修改审阅摆着：「打开修稿合并」不可点，审阅留着；点「取消」后恢复可点', async () => {
+  const review = await openAnnotationReview(false, async () => {
+    backend.addRevision(backend.state.drafts.at(-1)!)
+    await reloadChapter()
+    await act(async () => page.getByRole('button', { name: '稍后再合并' }).click())
+    await expect.element(page.getByRole('region', { name: '修稿合并' })).not.toBeInTheDocument()
+  })
+  const openMerge = page.getByRole('button', { name: '打开修稿合并' })
+
+  await expect.element(openMerge).toBeDisabled()
+  await expect.element(page.getByText(LOCK_HINT)).toBeVisible()
+  await expect.element(review).toBeVisible()
+
+  await act(async () => review.getByRole('button', { name: '取消' }).click())
+
+  await expect.element(openMerge).toBeEnabled()
+})
+
+it('有不能再合并的旧修稿，批注修改审阅摆着：「查看修稿」不可点；点「取消」后恢复可点', async () => {
+  const review = await openAnnotationReview(false, async () => {
+    backend.addRevision(backend.state.drafts.at(-1)!).source = null
+    await reloadChapter()
+    await expect.element(page.getByText('有 1 份修稿不能再合并')).toBeVisible()
+  })
+  const view = page.getByRole('button', { name: '查看修稿' })
+
+  await expect.element(view).toBeDisabled()
+
+  await act(async () => review.getByRole('button', { name: '取消' }).click())
+
+  await expect.element(view).toBeEnabled()
 })
