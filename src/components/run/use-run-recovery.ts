@@ -29,10 +29,10 @@ function workflowWriting(projectPath: string | undefined, runs = useWorkflowStor
 
 let selectionRequests = 0
 
-/** 修稿合并视图里编辑器不渲染：当前标签看它此刻摆没摆合并，后台标签看切过去会不会自动摆出合并（有可合并修稿）。 */
+/** 修稿合并或批注修改审阅盖住正文时编辑器接不住：当前标签看它此刻盖没盖，后台标签看切过去会不会自动摆出合并（有可合并修稿）。 */
 function editorReceives(tab: EditorTab, session: ProjectSessionContext): boolean {
-  const { mergeViewFile, chapterFacts } = useStageStore.getState()
-  if (tab.id === useEditorStore.getState().activeTabId) return mergeViewFile !== tab.filePath
+  const { coveredProseFile, chapterFacts } = useStageStore.getState()
+  if (tab.id === useEditorStore.getState().activeTabId) return coveredProseFile !== tab.filePath
   const facts = tab.draftId !== undefined && chapterFacts && sameProjectSessionContext(chapterFacts.session, session) ? chapterFacts.byDraft[tab.draftId] : undefined
   return !facts?.mergeable.length
 }
@@ -147,9 +147,12 @@ export function useRunRecovery(): RunRecovery {
 
   useEffect(() => {
     if (!session) return
-    return globalEventBus.on('PLANNING_RECOVERY_CHANGED', ({ projectSession }) => {
+    const refresh = ({ projectSession }: { projectSession: ProjectSessionContext }) => {
       if (sameProjectSessionContext(projectSession, session)) setRefreshTick(value => value + 1)
-    })
+    }
+    const offPlanning = globalEventBus.on('PLANNING_RECOVERY_CHANGED', refresh)
+    const offEditor = globalEventBus.on('EDITOR_RECOVERY_DELIVERED', refresh)
+    return () => { offPlanning(); offEditor() }
   }, [session])
 
   useEffect(() => {

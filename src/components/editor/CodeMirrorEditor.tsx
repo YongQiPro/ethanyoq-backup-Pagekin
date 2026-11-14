@@ -53,6 +53,8 @@ export type CodeMirrorEditorProps = {
   /** 批注面板的停靠位置；不给时停在编辑器右侧，给 null 时不显示。 */
   annotationSlot?: HTMLElement | null
   onAnnotationAdded?: () => void
+  /** 批注修改审阅摆出或收起：摆着时正文被盖住。 */
+  onReviewChange?: (open: boolean) => void
   chapterAnnotations?: boolean
 }
 
@@ -116,6 +118,7 @@ export default function CodeMirrorEditor({
   paragraphIndent: indentParagraphs = false,
   annotationSlot,
   onAnnotationAdded,
+  onReviewChange,
   chapterAnnotations = false,
 }: CodeMirrorEditorProps) {
   const inkThemeName = useThemeStore(s => s.resolvedTheme)
@@ -277,16 +280,22 @@ export default function CodeMirrorEditor({
       setBubblePos({ top: coords?.top ?? 150, left: coords?.left ?? 200, inView: true })
       setAiResult(''); setAiError(uiText('无法恢复原运行', 'The original run could not be restored.')); setBubbleOpen(true)
     })
-    return () => { client.detach(); aiRequestSequenceRef.current += 1 }
+    // 交接被取走后父组件不再传句柄，这里不作废进行中的恢复；换下一次交接或卸载时才作废。
     // Navigation is explicit; later document changes are checked at acceptance.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recoveryKey])
 
-  // 作者看得见才回执：设置页盖住编辑区时等关掉再回执；卸载时没有回执，运行留在侧页。
+  // 作者看得见才回执：原选区滚出视口或设置页盖住编辑区时，等看得见再回执；卸载时没有回执，运行留在侧页。
   const settingsOpen = useLayoutStore(s => s.settingsOpen)
-  const previewShown = bubbleOpen && bubblePos.top !== 0 && !!aiResult && !settingsOpen
+  const previewShown = bubbleOpen && bubblePos.inView && bubblePos.top !== 0 && !!aiResult && !settingsOpen
   useEffect(() => { if (previewShown) inlineRef.current?.delivered() }, [previewShown, aiResult])
   useEffect(() => { if (!settingsOpen) inlineReview?.client.delivered() }, [settingsOpen, inlineReview])
+  const reviewing = inlineReview !== null
+  useEffect(() => {
+    if (!reviewing) return
+    onReviewChange?.(true)
+    return () => onReviewChange?.(false)
+  }, [onReviewChange, reviewing])
 
   useEffect(() => () => {
     inlineRef.current?.detach()

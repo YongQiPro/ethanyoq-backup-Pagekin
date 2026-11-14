@@ -126,20 +126,21 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
     reload()
   }, [request, filePath, reload])
 
-  // 句柄先存进本地 state 再清掉 store 里的请求，重新挂载时不再重开气泡。
-  const requested = useStageStore(s => s.selectionRequest?.filePath === filePath && session && sameProjectSessionContext(s.selectionRequest.session, session)
-    ? s.selectionRequest : undefined)
-  const [recovery, setRecovery] = useState(requested)
-  if (requested && requested.nonce !== recovery?.nonce) setRecovery(requested)
-  useEffect(() => {
-    if (requested) useStageStore.setState({ selectionRequest: null, sheet: null })
-  }, [requested])
+  // 交接只交给一个挂着的编辑器：编辑器拿到后清掉 store 里的请求，之后重挂的编辑器不再重开气泡；
+  // 合并视图盖着正文时编辑器没挂，请求留着等它挂上。
   const merging = draft.mergeData !== null
+  const recovery = useStageStore(s => !merging && s.selectionRequest?.filePath === filePath && session && sameProjectSessionContext(s.selectionRequest.session, session)
+    ? s.selectionRequest : undefined)
   useEffect(() => {
-    if (!merging) return
-    useStageStore.setState({ mergeViewFile: filePath })
-    return () => useStageStore.setState({ mergeViewFile: null })
-  }, [merging, filePath])
+    if (recovery) useStageStore.setState({ selectionRequest: null, sheet: null })
+  }, [recovery])
+  const [reviewing, setReviewing] = useState(false)
+  const covered = merging || reviewing
+  useEffect(() => {
+    if (!covered) return
+    useStageStore.setState({ coveredProseFile: filePath })
+    return () => useStageStore.setState({ coveredProseFile: null })
+  }, [covered, filePath])
 
   const title = blueprint?.title || draft.meta?.chapterTitle || ''
   const units = charCount.toLocaleString(locale)
@@ -206,6 +207,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
                 onSave={body => draft.save(body)}
                 annotationSlot={sheetFree ? sheetSlot : null}
                 onAnnotationAdded={() => useStageStore.setState({ sheet: null })}
+                onReviewChange={setReviewing}
                 chapterAnnotations
                 onCommitAnnotations={async (before, after, annotations) => {
                   await draft.commitAnnotations(before, after, annotations)
