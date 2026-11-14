@@ -3,12 +3,13 @@ import { createPortal, flushSync } from 'react-dom'
 import CodeMirror, { ReactCodeMirrorRef, EditorView, ViewUpdate } from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
-import { EditorState, RangeSetBuilder, StateEffect, StateField, type Extension } from '@codemirror/state'
+import { EditorSelection, EditorState, RangeSetBuilder, StateEffect, StateField, type Extension } from '@codemirror/state'
 import { Decoration, type DecorationSet } from '@codemirror/view'
 import { openSearchPanel, closeSearchPanel, search } from '@codemirror/search'
-import { Sparkles, Bold, Check, MessageSquareText, Trash2, X } from 'lucide-react'
+import { Sparkles, Bold, Check, Copy, MessageSquareText, Trash2, X } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Button } from '../ui/Button'
+import { toast } from '../ui/Toast'
 import { paragraphIndent } from './paragraph-indent'
 import { proseTab } from './prose-tab'
 import { useThemeStore } from '../../stores/theme-store'
@@ -45,8 +46,9 @@ export type CodeMirrorEditorProps = {
   stickyTopInset?: (editor: HTMLElement) => number
   /** 段落首行缩进两字（只是显示，见 paragraph-indent）。 */
   paragraphIndent?: boolean
-  /** 批注面板的停靠位置；不给时停在编辑器右侧。 */
+  /** 批注面板的停靠位置；不给时停在编辑器右侧，给 null 时不显示（侧页让给了别的页）。 */
   annotationSlot?: HTMLElement | null
+  onAnnotationAdded?: () => void
   chapterAnnotations?: boolean
 }
 
@@ -107,6 +109,7 @@ export default function CodeMirrorEditor({
   stickyTopInset,
   paragraphIndent: indentParagraphs = false,
   annotationSlot,
+  onAnnotationAdded,
   chapterAnnotations = false,
 }: CodeMirrorEditorProps) {
   const inkThemeName = useThemeStore(s => s.resolvedTheme)
@@ -611,6 +614,7 @@ export default function CodeMirrorEditor({
     setNoteDraft(null)
     setNoteError(null)
     setBubbleOpen(false)
+    onAnnotationAdded?.()
     view.contentDOM.focus({ preventScroll: true })
   }
 
@@ -631,7 +635,8 @@ export default function CodeMirrorEditor({
   const locateAnnotation = (annotation: EditorInlineAnnotation) => {
     const view = editorRef.current?.view
     if (!view) return
-    view.dispatch({ selection: { anchor: annotation.from, head: annotation.to } })
+    const range = EditorSelection.range(annotation.from, annotation.to)
+    view.dispatch({ selection: range, effects: EditorView.scrollIntoView(range, { y: 'center' }) })
     view.focus()
   }
 
@@ -697,7 +702,7 @@ export default function CodeMirrorEditor({
       </div>
     </aside>
   ) : null
-  const panelBeside = Boolean(annotationPanel && !annotationSlot && !fitContent)
+  const panelBeside = Boolean(annotationPanel && annotationSlot === undefined && !fitContent)
 
   return (
     <div className={fitContent ? 'relative' : clsx('relative h-full flex min-h-0', panelBeside ? 'cm-annotating' : 'flex-col')}
@@ -788,6 +793,8 @@ export default function CodeMirrorEditor({
               )}
               <div className="cm-selbar-actions">
                 {canResumeAI && <Button variant="text" size="sm" onClick={handleResumeAI}>{uiText('继续原运行', 'Continue original run')}</Button>}
+                {aiResult && aiError && <Button variant="text" size="sm" onClick={() => void navigator.clipboard.writeText(aiResult)
+                  .then(() => toast.success(uiText('已复制', 'Copied')), () => toast.error(uiText('无法复制', 'Could not copy')))}><Copy size={13} aria-hidden="true" />{uiText('复制', 'Copy')}</Button>}
                 <Button variant="secondary" size="sm" onClick={handleRejectAI}>{uiText('取消', 'Cancel')}</Button>
                 <Button
                   variant="primary"
@@ -863,7 +870,7 @@ export default function CodeMirrorEditor({
         </div>
       )}
 
-      {annotationPanel && (annotationSlot ? createPortal(annotationPanel, annotationSlot) : annotationPanel)}
+      {annotationPanel && annotationSlot !== null && (annotationSlot ? createPortal(annotationPanel, annotationSlot) : annotationPanel)}
     </div>
   )
 }
