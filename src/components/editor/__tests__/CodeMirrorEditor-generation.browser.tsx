@@ -7,6 +7,7 @@ import { EditorView } from '@codemirror/view'
 import { useProjectStore } from '../../../stores/project-store'
 import { useLLMStore } from '../../../stores/llm-store'
 import { useLocaleStore } from '../../../stores/locale-store'
+import { useLayoutStore } from '../../../stores/layout-store'
 import CodeMirrorEditor from '../CodeMirrorEditor'
 import { commandKeyLabel, IS_MAC } from '../../stage/shortcut-keys'
 import { EDITOR_INLINE_INSTRUCTION_MAX_LENGTH } from '../../../shared/editor-inline-generation'
@@ -103,6 +104,7 @@ afterEach(async () => {
   useProjectStore.setState({ currentProject: null })
   useLLMStore.setState({ defaultModelId: null, models: [], stageModelIds: {} })
   useLocaleStore.setState({ locale: 'zh-CN' })
+  useLayoutStore.setState({ settingsOpen: false })
   Reflect.deleteProperty(window, 'aiNovelAPI')
 })
 
@@ -263,6 +265,27 @@ describe('CodeMirror editor AI generation boundary', () => {
     expect(commit).not.toHaveBeenCalled()
     await act(async () => page.getByRole('button', { name: '接受全部' }).click())
     expect(commit).toHaveBeenCalledWith('林岚走进北塔', '我走进北塔', [expect.objectContaining({ instruction: '改成第一人称' })])
+  })
+
+  it('统一修改的结果摆进审阅对比、作者看得见时才回执，设置页盖住时等关掉再回执', async () => {
+    deferStream = true
+    const answer = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => channel === 'editor-inline:delivered' ? undefined : answer(channel, ...args))
+    const delivered = () => invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:delivered').map(([, request]) => request)
+    await act(async () => root.render(<CodeMirrorEditor content="林岚走进北塔" mode="prose" onCommitAnnotations={vi.fn(async () => {})} />))
+    await selectLine('林岚走进北塔')
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill('改成第一人称'))
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('button', { name: '统一修改（1）' }).click())
+    await act(async () => useLayoutStore.setState({ settingsOpen: true }))
+    await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: '我走进北塔', finishReason: 'stop' } as never))
+    await expect.element(page.getByRole('region', { name: '批注修改对比' })).toBeInTheDocument()
+    expect(delivered()).toEqual([])
+
+    await act(async () => useLayoutStore.setState({ settingsOpen: false }))
+
+    await vi.waitFor(() => expect(delivered()).toEqual([{ handle: expect.objectContaining({ runId: 'run-1' }) }]))
   })
 
   it('审阅期间原运行的来源变了（例如改了模型设置），接受全部不写入，并说明要取消后重来', async () => {
