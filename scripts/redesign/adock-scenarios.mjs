@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 
 import * as chapterView from './pages/chapter-view.mjs'
+import * as runSheet from './pages/run-sheet.mjs'
 import { seedStageSample } from './scenarios.mjs'
 import { STAGE_SAMPLE } from './stage-sample.mjs'
 
@@ -111,6 +112,76 @@ export const ADOCK_SCENARIOS = {
     await review.waitFor({ state: 'hidden', timeout: 30_000 })
     await chapterView.prose(page).getByText('北堤外沉了一条运煤的双桅船').waitFor({ state: 'visible' })
     measured.savedAfterTask = true
+    return measured
+  } },
+
+  'adock-restore-review': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page, fake, shoot }) => {
+    const measured = {}
+    fake.replyReview(prompt => prompt.includes(NOTE) ? REVISED : null)
+    await chapterView.open(page, 3)
+    await chapterView.reviewSheet(page).waitFor({ state: 'visible' })
+    await shoot('adock-r1-review-before')
+
+    await annotate(page)
+    await dock(page).waitFor({ state: 'visible' })
+    measured.reviewWhileDocked = await chapterView.reviewSheet(page).count()
+    assert.equal(measured.reviewWhileDocked, 0, '加批注后审稿报告让位')
+    measured.dockTitle = await dock(page).locator('.cm-selbar-title').innerText()
+    assert.equal(measured.dockTitle, '本章批注 · 1')
+    await shoot('adock-r2-docked')
+
+    await dock(page).getByRole('button', { name: '统一修改（1）' }).click()
+    const review = page.getByRole('region', { name: '批注修改对比' })
+    await review.waitFor({ state: 'visible', timeout: 60_000 })
+    await review.getByRole('button', { name: '接受全部' }).click()
+    await review.waitFor({ state: 'hidden', timeout: 30_000 })
+    await chapterView.prose(page).getByText('北堤外沉了一条运煤的双桅船').waitFor({ state: 'visible' })
+    await chapterView.reviewSheet(page).waitFor({ state: 'visible' })
+    measured.dockAfterCommit = await dock(page).count()
+    assert.equal(measured.dockAfterCommit, 0, '统一修改写进正文后批注坞收起')
+    await shoot('adock-r3-review-back')
+    return measured
+  } },
+
+  'adock-restore-run': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page, shoot }) => {
+    const measured = {}
+    await chapterView.open(page, 3)
+    await chapterView.reviewSheet(page).waitFor({ state: 'visible' })
+    await runSheet.openFromPalette(page)
+    measured.reviewUnderRun = await chapterView.reviewSheet(page).count()
+    assert.equal(measured.reviewUnderRun, 0, '运行侧页顶替审稿报告')
+    await annotate(page)
+    await dock(page).waitFor({ state: 'visible' })
+    measured.runWhileDocked = await runSheet.sheet(page).count()
+    assert.equal(measured.runWhileDocked, 0, '加批注后运行侧页让位')
+
+    await dock(page).getByRole('button', { name: '删除批注 1' }).click()
+    await runSheet.waitUntilOpen(page)
+    measured.dockAfterDelete = await dock(page).count()
+    measured.reviewAfterDelete = await chapterView.reviewSheet(page).count()
+    assert.equal(measured.dockAfterDelete, 0)
+    assert.equal(measured.reviewAfterDelete, 0, '只放回运行侧页，不另开审稿报告')
+    await shoot('adock-r4-run-back')
+    return measured
+  } },
+
+  'adock-restore-empty': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page, shoot }) => {
+    const measured = {}
+    await chapterView.open(page, 3)
+    await chapterView.reviewSheet(page).waitFor({ state: 'visible' })
+    await chapterView.reviewSheet(page).getByRole('button', { name: '关闭审稿报告' }).first().click()
+    await chapterView.reviewSheet(page).waitFor({ state: 'hidden' })
+    await annotate(page)
+    await dock(page).waitFor({ state: 'visible' })
+
+    await dock(page).getByRole('button', { name: '清空' }).click()
+    await dock(page).waitFor({ state: 'hidden' })
+    await page.waitForTimeout(500)
+    measured.reviewAfterClear = await chapterView.reviewSheet(page).count()
+    measured.runAfterClear = await runSheet.sheet(page).count()
+    assert.equal(measured.reviewAfterClear, 0, '之前侧栏空着，清空批注后仍空着')
+    assert.equal(measured.runAfterClear, 0)
+    await shoot('adock-r5-empty')
     return measured
   } },
 }
