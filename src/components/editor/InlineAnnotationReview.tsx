@@ -144,7 +144,6 @@ export default function InlineAnnotationReview({ before, after, annotations, onC
         {changes[piece.index]!.error && <span role="alert">{changes[piece.index]!.error}</span>}
       </span>}{closingAfter(position)}
     </span>)}</div>
-    {error && <p role="alert">{error}</p>}
-    <div className="inline-annotation-footer"><Button variant="secondary" disabled={committing} onClick={onCancel}>{text('取消', 'Cancel')}</Button><Button variant="primary" disabled={committing || changes.some(item => item.busy)} onClick={acceptAll}>{committing ? text('保存中…', 'Saving…') : text('接受全部', 'Accept all')}</Button></div>
+    <div className="inline-annotation-footer">{error && <p role="alert">{error}</p>}<Button variant="secondary" disabled={committing} onClick={onCancel}>{text('取消', 'Cancel')}</Button><Button variant="primary" disabled={committing || changes.some(item => item.busy)} onClick={acceptAll}>{committing ? text('保存中…', 'Saving…') : text('接受全部', 'Accept all')}</Button></div>
   </section>
 }
