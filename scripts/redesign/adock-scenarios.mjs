@@ -218,4 +218,37 @@ export const ADOCK_SCENARIOS = {
     await shoot('adock-r6-empty-commit')
     return measured
   } },
+
+  'adock-lock-revise': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page, fake, shoot }) => {
+    const measured = {}
+    fake.replyReview(prompt => prompt.includes(NOTE) ? REVISED : null)
+    await chapterView.open(page, 3)
+    await annotate(page)
+    await dock(page).getByRole('button', { name: '统一修改（1）' }).click()
+    const review = page.getByRole('region', { name: '批注修改对比' })
+    await review.waitFor({ state: 'visible', timeout: 60_000 })
+
+    const revise = chapterView.view(page).getByRole('button', { name: /项意见修稿$/ })
+    measured.reviseLabel = await revise.innerText()
+    measured.reviseDisabled = await revise.isDisabled()
+    assert.equal(measured.reviseDisabled, true, '审阅摆着时「按 N 项意见修稿」不可点')
+    measured.hint = await chapterView.view(page).locator('.stage-ch-hint').innerText()
+    assert.equal(measured.hint, '批注修改还在等你处理，修稿会冲掉它。先接受或取消批注修改。')
+    await shoot('adock-l1-locked')
+    await chapterView.view(page).getByRole('button', { name: '更多操作' }).click()
+    const refine = page.getByRole('menuitem', { name: '直接修稿…' })
+    measured.refineDisabled = await refine.isDisabled()
+    assert.equal(measured.refineDisabled, true, '审阅摆着时「直接修稿」不可点')
+    await shoot('adock-l1-locked-menu')
+
+    await page.keyboard.press('Escape')
+    await review.getByRole('button', { name: '取消' }).click()
+    await review.waitFor({ state: 'hidden' })
+    measured.reviseDisabledAfterCancel = await revise.isDisabled()
+    assert.equal(measured.reviseDisabledAfterCancel, false, '取消批注修改后修稿入口恢复')
+    measured.hintAfterCancel = await chapterView.view(page).locator('.stage-ch-hint').innerText()
+    assert.notEqual(measured.hintAfterCancel, measured.hint)
+    await shoot('adock-l2-unlocked')
+    return measured
+  } },
 }

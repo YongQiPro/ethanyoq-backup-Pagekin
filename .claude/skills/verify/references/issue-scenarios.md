@@ -300,3 +300,4 @@ RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找�
 | `adock-restore-run` | 第 3 章从 Ctrl K 打开运行侧页顶替报告（`adock-r4-run-before`），加批注后运行侧页让位（`adock-r4-run-docked`）；删掉唯一一条批注后运行侧页回来，不另开报告，正文不留批注底色（`adock-r4-run-back`） | 第 3 章 | 否 | #653 |
 | `adock-restore-empty` | 第 3 章先关掉审稿报告再加批注，清空后侧栏仍空着（`adock-r5-empty`） | 第 3 章 | 否 | #653 |
 | `adock-restore-empty-commit` | 第 3 章先关掉审稿报告再加批注，统一修改「接受全部」写进正文后侧栏仍空着（`adock-r6-empty-commit`） | 第 3 章逐处审阅 | 是 | #653 |
+| `adock-lock-revise` | 第 3 章已审稿，批注统一修改的逐处审阅摆着：「按 N 项意见修稿」与「更多操作」里的「直接修稿…」置灰，动作条提示先接受或取消批注修改（`adock-l1-locked`）；点审阅里的「取消」后入口恢复、提示换回原文（`adock-l2-unlocked`） | 第 3 章逐处审阅 | 是 | #653 |
