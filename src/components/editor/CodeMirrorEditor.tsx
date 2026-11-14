@@ -277,7 +277,7 @@ export default function CodeMirrorEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recoveryKey])
 
-  // 预览或批注审阅真的画出来、作者看得见才回执：设置页盖住编辑区时等关掉再回执；卸载时没有回执，运行留在侧页。
+  // 作者看得见才回执：设置页盖住编辑区时等关掉再回执；卸载时没有回执，运行留在侧页。
   const settingsOpen = useLayoutStore(s => s.settingsOpen)
   const previewShown = bubbleOpen && bubblePos.top !== 0 && !!aiResult && !settingsOpen
   useEffect(() => { if (previewShown) inlineRef.current?.delivered() }, [previewShown, aiResult])
