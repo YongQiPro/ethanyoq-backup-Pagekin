@@ -136,7 +136,7 @@ it('批注的原文滚出纸面后点「定位批注」：原文滚回可见范�
   await expect.poll(visible).toBe(true)
 })
 
-async function openAnnotationReview() {
+async function openAnnotationReview(reviewed = false) {
   const answer = backend.invoke.getMockImplementation()!
   let recovery: { view: object; modelId: string; sourceStatus: string; context: object } | null = null
   backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
@@ -155,9 +155,14 @@ async function openAnnotationReview() {
     }
     if (channel === 'editor-inline:read-recovery') return recovery
     if (channel === 'editor-inline:delivered') return undefined
+    if (channel === 'db:annotation-commit') {
+      const { draftId, after } = args[0] as { draftId: number; after: string }
+      Object.assign(backend.state.drafts.find(draft => draft.id === draftId)!, { content: after })
+      return { success: true }
+    }
     return answer(channel, ...args)
   })
-  await openChapter({ reviewed: false, content: ORIGINAL })
+  await openChapter({ reviewed, content: ORIGINAL })
   await annotate('他第三次展开信纸。', '写出信纸上的字')
   await act(async () => page.getByRole('button', { name: '统一修改（1）' }).click())
   const review = page.getByRole('region', { name: '批注修改对比' })
@@ -185,4 +190,69 @@ it('批注修改审阅到一半，本章被任务占用：点「接受全部」�
 
   await expect.element(review.getByRole('alert')).toHaveTextContent('修改还在，但正文现在不能编辑，没有保存。等本章任务结束再点「接受全部」，或点「取消」放弃。')
   expect(annotationCommits()).toEqual([])
+})
+
+const runSheet = () => page.getByRole('complementary', { name: '运行' })
+
+it('审稿报告开着时加批注，用完后清空批注：报告回到侧栏', async () => {
+  await openChapter({ reviewed: true })
+  await expect.element(reviewSheet()).toBeVisible()
+  await annotate('他第三次展开信纸。', '写出信纸上的字')
+  await expect.element(reviewSheet()).not.toBeInTheDocument()
+
+  await act(async () => dock().getByRole('button', { name: '清空' }).click())
+
+  await expect.element(dock()).not.toBeInTheDocument()
+  await expect.element(reviewSheet()).toBeVisible()
+})
+
+it('审稿报告开着时加批注，统一修改接受全部写进正文后：报告回到侧栏', async () => {
+  const review = await openAnnotationReview(true)
+  await expect.element(reviewSheet()).not.toBeInTheDocument()
+
+  await act(async () => review.getByRole('button', { name: '接受全部' }).click())
+
+  await expect.element(review).not.toBeInTheDocument()
+  await expect.element(page.getByText('他第三次展开信纸，上面只有两个字：等我。')).toBeVisible()
+  await expect.element(reviewSheet()).toBeVisible()
+})
+
+it('运行侧页开着时加批注，删掉最后一条批注后：运行侧页回来', async () => {
+  await openChapter({ reviewed: false })
+  await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'history' } }))
+  await expect.element(runSheet()).toBeVisible()
+  await annotate('他第三次展开信纸。', '写出信纸上的字')
+  await expect.element(runSheet()).not.toBeInTheDocument()
+
+  await act(async () => dock().getByRole('button', { name: '删除批注 1' }).click())
+
+  await expect.element(dock()).not.toBeInTheDocument()
+  await expect.element(runSheet()).toBeVisible()
+  expect(useStageStore.getState().sheet).toEqual({ kind: 'run', tab: 'history' })
+})
+
+it('作者先关掉审稿报告再加批注，用完后：侧栏仍空着，不替作者打开报告', async () => {
+  await openChapter({ reviewed: true })
+  await act(async () => page.getByRole('button', { name: '关闭审稿报告' }).click())
+  await expect.element(reviewSheet()).not.toBeInTheDocument()
+  await annotate('他第三次展开信纸。', '写出信纸上的字')
+
+  await act(async () => dock().getByRole('button', { name: '清空' }).click())
+
+  await expect.element(dock()).not.toBeInTheDocument()
+  await expect.element(reviewSheet()).not.toBeInTheDocument()
+  expect(useStageStore.getState().sheet).toBeNull()
+})
+
+it('批注期间打开过报告又关掉，用完后：放回批注前开着的那一页', async () => {
+  await openChapter({ reviewed: true })
+  await annotate('他第三次展开信纸。', '写出信纸上的字')
+  await act(async () => page.getByRole('button', { name: '更多操作' }).click())
+  await act(async () => page.getByRole('menuitem', { name: '审稿报告' }).click())
+  await act(async () => page.getByRole('button', { name: '关闭审稿报告' }).click())
+  await expect.element(dock()).toBeVisible()
+
+  await act(async () => dock().getByRole('button', { name: '清空' }).click())
+
+  await expect.element(reviewSheet()).toBeVisible()
 })
