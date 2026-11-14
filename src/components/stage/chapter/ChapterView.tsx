@@ -207,7 +207,8 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
                 onSave={body => draft.save(body)}
                 annotationSlot={sheetFree ? sheetSlot : null}
                 onAnnotationAdded={first => {
-                  if (!sheetFree) sheetBeforeDock.current = useStageStore.getState().sheet
+                  const { sheet } = useStageStore.getState()
+                  if (sheet) sheetBeforeDock.current = sheet
                   else if (first) sheetBeforeDock.current = null
                   useStageStore.setState({ sheet: null })
                 }}
