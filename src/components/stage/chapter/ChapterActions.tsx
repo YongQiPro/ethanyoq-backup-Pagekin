@@ -74,7 +74,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
   facts: ChapterFacts | undefined
   review: LatestReview | null
   focus: boolean
-  /** 批注统一修改在生成或审阅中：这时打开修稿合并会卸载正文，批注修改随之丢失。 */
+  /** 批注统一修改进行中：此时打开修稿合并会卸载正文，批注修改会丢。 */
   annotating: boolean
 }) {
   const text = useLocaleStore(s => s.text)

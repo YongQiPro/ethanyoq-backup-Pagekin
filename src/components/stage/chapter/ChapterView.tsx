@@ -107,7 +107,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
   const target = useProjectStore(s => s.currentProject?.novelConfig.wordsPerChapter) || 0
   const [sheetSlot, setSheetSlot] = useState<HTMLDivElement | null>(null)
   const sheetFree = useStageStore(s => s.focus || s.sheet === null || (s.sheet.kind === 'review' && (s.sheet.filePath !== filePath || latest === null)))
-  // 批注坞顶掉的侧页，批注用完时放回；作者那时已开了别的就不动。
+  // 批注坞顶掉的侧页，批注用完放回；作者已另开别的则不动。
   const sheetBeforeDock = useRef<StageSheet | null>(null)
 
   const facts = useStageStore(s => draft.meta && s.chapterFacts && session && sameProjectSessionContext(s.chapterFacts.session, session)

@@ -54,9 +54,9 @@ export type CodeMirrorEditorProps = {
   annotationSlot?: HTMLElement | null
   /** first：这是第一条，批注面板刚出现。 */
   onAnnotationAdded?: (first: boolean) => void
-  /** 批注从有到无：清空、删完或统一修改写进正文。卸载不算。 */
+  /** 批注从有到无。卸载不算。 */
   onAnnotationsCleared?: () => void
-  /** 批注统一修改进行到哪一步：preview 是生成中或结果停在预览里，review 是审阅摆着、盖住正文；null 是没有在进行。 */
+  /** preview：生成中或停在预览；review：审阅盖住正文；null：没在进行。 */
   onAnnotationRevisionChange?: (phase: AnnotationRevisionPhase | null) => void
   chapterAnnotations?: boolean
 }
