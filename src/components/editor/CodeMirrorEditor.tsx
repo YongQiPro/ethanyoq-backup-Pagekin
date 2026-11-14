@@ -56,10 +56,12 @@ export type CodeMirrorEditorProps = {
   onAnnotationAdded?: (first: boolean) => void
   /** 批注从有到无：清空、删完或统一修改写进正文。卸载不算。 */
   onAnnotationsCleared?: () => void
-  /** 批注修改审阅摆出或收起，摆着时盖住正文。 */
-  onReviewChange?: (open: boolean) => void
+  /** 批注统一修改进行到哪一步：preview 是生成中或结果停在预览里，review 是审阅摆着、盖住正文；null 是没有在进行。 */
+  onAnnotationRevisionChange?: (phase: AnnotationRevisionPhase | null) => void
   chapterAnnotations?: boolean
 }
+
+export type AnnotationRevisionPhase = 'preview' | 'review'
 
 type Label = readonly [string, string]
 
@@ -122,7 +124,7 @@ export default function CodeMirrorEditor({
   annotationSlot,
   onAnnotationAdded,
   onAnnotationsCleared,
-  onReviewChange,
+  onAnnotationRevisionChange,
   chapterAnnotations = false,
 }: CodeMirrorEditorProps) {
   const inkThemeName = useThemeStore(s => s.resolvedTheme)
@@ -195,7 +197,7 @@ export default function CodeMirrorEditor({
   const [aiResult, setAiResult] = useState<string | null>(null)
   const [aiError, setAiError] = useState<string | null>(null)
   const [copyFailedFor, setCopyFailedFor] = useState<string | null>(null)
-  const [activeAIAction, setActiveAIAction] = useState<string | null>(null)
+  const [activeAIAction, setActiveAIAction] = useState<EditorInlineRequest['action'] | null>(null)
   const [activeNote, setActiveNote] = useState<string | null>(null)
   const [bubbleSize, setBubbleSize] = useState({ width: 0, height: 0 })
   const bubbleRef = useCallback((node: HTMLDivElement | null) => {
@@ -265,7 +267,7 @@ export default function CodeMirrorEditor({
       const applicable = latest?.status === 'completed' && latest.compositionEligible === true && recovery.view.status !== 'cancelled' && recovery.sourceStatus === 'current'
       const resumable = editorCanContinue(recovery)
       setAiError(applicable || resumable ? null : uiText('恢复的候选不可应用，只能复制', 'The recovered candidate cannot be applied; it can only be copied.'))
-      setActiveAIAction(uiText(...actionLabel(target.action)))
+      setActiveAIAction(target.action)
       setActiveNote(target.action === 'instruct' ? target.instruction : target.action === 'batch-instruct' ? uiText(`共 ${target.annotations.length} 条批注`, `${target.annotations.length} annotations`) : null)
       const view = editorRef.current?.view
       const from = Math.min(target.from, view?.state.doc.length ?? 0)
@@ -295,12 +297,12 @@ export default function CodeMirrorEditor({
   const previewShown = bubbleOpen && bubblePos.inView && !!aiResult && !settingsOpen
   useEffect(() => { if (previewShown) inlineRef.current?.delivered() }, [previewShown, aiResult])
   useEffect(() => { if (!settingsOpen) inlineReview?.client.delivered() }, [settingsOpen, inlineReview])
-  const reviewing = inlineReview !== null
+  const annotationRevision: AnnotationRevisionPhase | null = inlineReview ? 'review' : activeAIAction === 'batch-instruct' && aiResult !== null ? 'preview' : null
   useEffect(() => {
-    if (!reviewing) return
-    onReviewChange?.(true)
-    return () => onReviewChange?.(false)
-  }, [onReviewChange, reviewing])
+    if (!annotationRevision) return
+    onAnnotationRevisionChange?.(annotationRevision)
+    return () => onAnnotationRevisionChange?.(null)
+  }, [onAnnotationRevisionChange, annotationRevision])
   const annotated = annotations.length > 0
   const wasAnnotated = useRef(false)
   useEffect(() => {
@@ -546,7 +548,7 @@ export default function CodeMirrorEditor({
       const client = createEditorInlineGeneration(session)
       inlineRef.current = client
       aiCandidateRef.current = null
-      setActiveAIAction(uiText(...actionLabel(request.action)))
+      setActiveAIAction(request.action)
       setActiveNote(request.action === 'instruct' ? request.instruction : request.action === 'batch-instruct' ? uiText(`共 ${request.annotations.length} 条批注`, `${request.annotations.length} annotations`) : null)
       setNoteDraft(null); setAiResult(''); setAiError(null)
       const recovery = await client.open({ input, modelId: routeModelId('editor-inline') ?? '', uiActionNonce: crypto.randomUUID() })
@@ -819,7 +821,7 @@ export default function CodeMirrorEditor({
               <div className="cm-selbar-title">
                 <Sparkles size={13} aria-hidden="true" />
                 {activeAIAction
-                  ? uiText(`${activeAIAction}预览`, `${activeAIAction} preview`)
+                  ? uiText(`${actionLabel(activeAIAction)[0]}预览`, `${actionLabel(activeAIAction)[1]} preview`)
                   : uiText('AI 预览', 'AI preview')}
               </div>
               {activeNote && <p className="cm-selbar-note-quote">{activeNote}</p>}
