@@ -199,6 +199,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
                 recoveryHandle={recovery?.handle}
                 recoveryNonce={recovery?.nonce}
                 editable={editable}
+                draftReadonly={draft.isReadonly}
                 hideStatusBar
                 onCharCountChange={setCharCount}
                 onChange={draft.onBodyChange}

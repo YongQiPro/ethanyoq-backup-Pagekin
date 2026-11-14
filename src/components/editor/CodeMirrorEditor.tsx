@@ -36,6 +36,7 @@ export type CodeMirrorEditorProps = {
   onGenerationHandle?: (handle: MainGenerationRunHandle) => void
   onCommitAnnotations?: (before: string, after: string, annotations: EditorInlineAnnotation[]) => Promise<void>
   editable?: boolean
+  draftReadonly?: boolean
   onChange?: (content: string) => void
   onSave?: (content: string) => Promise<void> | void
   onCharCountChange?: (count: number) => void
@@ -103,6 +104,7 @@ export default function CodeMirrorEditor({
   onGenerationHandle,
   onCommitAnnotations,
   editable = true,
+  draftReadonly = false,
   onChange,
   onSave,
   onCharCountChange,
@@ -216,8 +218,9 @@ export default function CodeMirrorEditor({
   } | null>(null)
 
   const editableRef = useRef(editable)
+  const draftReadonlyRef = useRef(draftReadonly)
   const filePathRef = useRef(filePath)
-  useLayoutEffect(() => { editableRef.current = editable; filePathRef.current = filePath }, [editable, filePath])
+  useLayoutEffect(() => { editableRef.current = editable; draftReadonlyRef.current = draftReadonly; filePathRef.current = filePath }, [editable, draftReadonly, filePath])
   const aiCandidateRef = useRef<{ artifactId: string; textHash: string } | null>(null)
   const inlineRef = useRef<ReturnType<typeof createEditorInlineGeneration> | null>(null)
   const handleResumeAI = async () => {
@@ -772,6 +775,7 @@ export default function CodeMirrorEditor({
         onCancel={() => setInlineReview(null)} onCommit={async after => {
           if (filePath !== inlineReview.filePath || inlineReview.sessionKey !== JSON.stringify(getActiveProjectSessionContext()) || editorRef.current?.view?.state.doc.toString() !== inlineReview.before) throw new Error('SOURCE_DRAFT_CHANGED')
           const run = await inlineReview.client.read().catch(() => null)
+          if (draftReadonlyRef.current) throw new Error('DRAFT_NOT_WRITABLE')
           if (!editableRef.current) throw new Error('DRAFT_NOT_EDITABLE')
           if (!run || run.sourceStatus !== 'current' || run.view.status === 'cancelled'
             || !(run.view.candidates ?? run.view.artifacts).some(candidate => candidate.artifactId === inlineReview.candidate.artifactId && candidate.textHash === inlineReview.candidate.textHash && candidate.text === inlineReview.after && candidate.status === 'completed' && candidate.compositionEligible === true)) throw new Error('SOURCE_DRAFT_CHANGED')
