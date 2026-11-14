@@ -106,6 +106,7 @@ afterEach(async () => {
   useLocaleStore.setState({ locale: 'zh-CN' })
   useLayoutStore.setState({ settingsOpen: false })
   Reflect.deleteProperty(window, 'aiNovelAPI')
+  Reflect.deleteProperty(navigator, 'clipboard')
 })
 
 describe('CodeMirror editor AI generation boundary', () => {
@@ -310,7 +311,7 @@ describe('CodeMirror editor AI generation boundary', () => {
     expect(commit).not.toHaveBeenCalled()
   })
 
-  it('审阅期间章节被审稿或修稿占用（正文不可编辑），接受全部不写入，修改仍留在审阅里', async () => {
+  it('审阅期间章节被审稿或修稿占用（正文不可编辑），接受全部不写入，提示等任务结束再接受；可编辑后照提示再点就写入', async () => {
     deferStream = true
     const commit = vi.fn(async () => {})
     await act(async () => root.render(<CodeMirrorEditor content="林岚走进北塔" mode="prose" onCommitAnnotations={commit} />))
@@ -325,9 +326,43 @@ describe('CodeMirror editor AI generation boundary', () => {
 
     await act(async () => page.getByRole('button', { name: '接受全部' }).click())
 
-    await expect.element(page.getByText('保存版本失败，修改仍在当前页面，请重试。')).toBeVisible()
+    await expect.element(page.getByText('修改还在，但正文现在不能编辑，没有保存。等本章任务结束再点「接受全部」，或点「取消」放弃。')).toBeVisible()
     expect(commit).not.toHaveBeenCalled()
     await expect.element(page.getByRole('region', { name: '批注修改对比' })).toBeVisible()
+
+    await act(async () => root.render(<CodeMirrorEditor content="林岚走进北塔" mode="prose" onCommitAnnotations={commit} />))
+    await act(async () => page.getByRole('button', { name: '接受全部' }).click())
+    expect(commit).toHaveBeenCalledWith('林岚走进北塔', '我走进北塔', [expect.objectContaining({ instruction: '改成第一人称' })])
+  })
+
+  const reviewWithNote = async (note: string) => {
+    await act(async () => root.render(<CodeMirrorEditor content="林岚走进北塔" mode="prose" onCommitAnnotations={vi.fn(async () => {})} />))
+    await selectLine('林岚走进北塔')
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill(note))
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('button', { name: '统一修改（1）' }).click())
+    await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: '我走进北塔', finishReason: 'stop' } as never))
+    await act(async () => page.getByRole('button', { name: '查看修改 1' }).click())
+    await act(async () => page.getByRole('button', { name: '重新生成' }).click())
+  }
+  const begins = () => invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:begin')
+
+  it('重新生成一处修改时，这一处的批注一字不少地带上', async () => {
+    deferStream = true
+    const note = '语气再冷一些，'.repeat(200)
+    await reviewWithNote(note)
+
+    await vi.waitFor(() => expect(begins()).toHaveLength(2))
+    expect((begins()[1][1] as { input: { instruction: string } }).input.instruction).toContain(note)
+  })
+
+  it('这一处的批注长到带不进重新生成：不发请求，告诉作者可以直接编辑', async () => {
+    deferStream = true
+    await reviewWithNote('冷'.repeat(EDITOR_INLINE_INSTRUCTION_MAX_LENGTH))
+
+    await expect.element(page.getByText('这处的批注太长，没法重新生成。可以点「编辑」直接改。')).toBeVisible()
+    expect(begins()).toHaveLength(1)
   })
 
   it('写入时主进程报正文已变（经 IPC 带 "Error: " 前缀），提示取消后重来，而不是让作者重试', async () => {
@@ -345,6 +380,22 @@ describe('CodeMirror editor AI generation boundary', () => {
 
     await expect.element(page.getByText('正文或来源已变化，这次修改不能保存。取消后可重新统一修改。')).toBeVisible()
     expect(commit).toHaveBeenCalledTimes(1)
+  })
+
+  it('写入时主进程报这一稿已不能写（已定稿或有了新版本），不让作者重试，指向当前版本', async () => {
+    deferStream = true
+    const commit = vi.fn(async () => { throw new Error("Error invoking remote method 'db:annotation-commit': Error: DRAFT_NOT_WRITABLE") })
+    await act(async () => root.render(<CodeMirrorEditor content="林岚走进北塔" mode="prose" onCommitAnnotations={commit} />))
+    await selectLine('林岚走进北塔')
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill('改成第一人称'))
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('button', { name: '统一修改（1）' }).click())
+    await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: '我走进北塔', finishReason: 'stop' } as never))
+
+    await act(async () => page.getByRole('button', { name: '接受全部' }).click())
+
+    await expect.element(page.getByText('这一稿已定稿或有了新版本，修改没有保存。点「取消」后到当前版本里改。')).toBeVisible()
   })
 
   it('重新生成一处修改时只带这一处的批注，不带紧挨着的另一段的批注', async () => {
@@ -731,6 +782,23 @@ describe('CodeMirror editor AI generation boundary', () => {
     await expect.element(page.getByText('替换甲')).toBeVisible()
   })
 
+  it('结果只可复制时，点「复制」把预览原文放进剪贴板', async () => {
+    deferStream = true
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    await act(async () => root.render(<CodeMirrorEditor content="甲乙" mode="prose" />))
+    await act(async () => page.getByText('甲乙').click({ clickCount: 3 }))
+    await act(async () => page.getByRole('button', { name: '润色' }).click())
+    await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: '替换甲', finishReason: 'stop' } as never))
+    await act(async () => root.render(<CodeMirrorEditor content="甲乙" mode="prose" editable={false} />))
+    await act(async () => page.getByRole('button', { name: '替换' }).click())
+    await expect.element(page.getByText('正文已变为只读，结果未应用；你仍可复制预览内容')).toBeVisible()
+
+    await act(async () => page.getByRole('button', { name: '复制' }).click())
+
+    expect(writeText).toHaveBeenCalledWith('替换甲')
+  })
+
   it('keeps request B visible when cancelled request A fails after B succeeds', async () => {
     deferFirstLease = true
     deferStream = true
@@ -976,5 +1044,31 @@ describe('annotation panel layout', () => {
     const reviewing = glyphAt(container.querySelector('.inline-annotation-prose')!, SECOND_PARAGRAPH)
     expect(editing).toMatchObject({ fontSize: '18px', lineHeight: '36.9px' })
     expect(reviewing).toEqual(editing)
+  })
+
+  const LONG_CHAPTER = Array.from({ length: 60 }, (_, index) => `第 ${index + 1} 段：雨从傍晚开始就没有停过。`).join('\n\n')
+  const annotationInView = (scroller: Element) => {
+    const mark = container.querySelector('.cm-editor-annotation')?.getBoundingClientRect()
+    const box = scroller.getBoundingClientRect()
+    return Boolean(mark && mark.top >= box.top && mark.bottom <= box.bottom)
+  }
+
+  it('随内容长高、由外层滚动的正文：批注原文滚出视口后，点「定位批注」把它滚回来', async () => {
+    function OuterScroll() {
+      const [slot, setSlot] = useState<HTMLDivElement | null>(null)
+      return <div className="paper-ink" style={{ display: 'flex', height: 300 }}>
+        <div data-testid="scroller" style={{ flex: 1, overflow: 'auto' }}><CodeMirrorEditor content={LONG_CHAPTER} mode="prose" fitContent annotationSlot={slot} /></div>
+        <div ref={setSlot} style={{ width: 320 }} />
+      </div>
+    }
+    await act(async () => root.render(<OuterScroll />))
+    await annotateLine('第 1 段：雨从傍晚开始就没有停过。', '写出雨声')
+    const scroller = container.querySelector('[data-testid="scroller"]')!
+    await act(async () => { scroller.scrollTop = scroller.scrollHeight })
+    expect(annotationInView(scroller)).toBe(false)
+
+    await act(async () => page.getByRole('button', { name: '定位批注 1' }).click())
+
+    await expect.poll(() => annotationInView(scroller)).toBe(true)
   })
 })

@@ -3,7 +3,7 @@ import { createPortal, flushSync } from 'react-dom'
 import CodeMirror, { ReactCodeMirrorRef, EditorView, ViewUpdate } from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
-import { EditorState, RangeSetBuilder, StateEffect, StateField, type Extension } from '@codemirror/state'
+import { EditorSelection, EditorState, RangeSetBuilder, StateEffect, StateField, type Extension } from '@codemirror/state'
 import { Decoration, type DecorationSet } from '@codemirror/view'
 import { openSearchPanel, closeSearchPanel, search } from '@codemirror/search'
 import { Sparkles, Bold, Check, MessageSquareText, Trash2, X } from 'lucide-react'
@@ -36,6 +36,7 @@ export type CodeMirrorEditorProps = {
   onGenerationHandle?: (handle: MainGenerationRunHandle) => void
   onCommitAnnotations?: (before: string, after: string, annotations: EditorInlineAnnotation[]) => Promise<void>
   editable?: boolean
+  draftReadonly?: boolean
   onChange?: (content: string) => void
   onSave?: (content: string) => Promise<void> | void
   onCharCountChange?: (count: number) => void
@@ -49,8 +50,9 @@ export type CodeMirrorEditorProps = {
   stickyTopInset?: (editor: HTMLElement) => number
   /** 段落首行缩进两字（只是显示，见 paragraph-indent）。 */
   paragraphIndent?: boolean
-  /** 批注面板的停靠位置；不给时停在编辑器右侧。 */
+  /** 批注面板的停靠位置；不给时停在编辑器右侧，给 null 时不显示。 */
   annotationSlot?: HTMLElement | null
+  onAnnotationAdded?: () => void
   chapterAnnotations?: boolean
 }
 
@@ -102,6 +104,7 @@ export default function CodeMirrorEditor({
   onGenerationHandle,
   onCommitAnnotations,
   editable = true,
+  draftReadonly = false,
   onChange,
   onSave,
   onCharCountChange,
@@ -112,6 +115,7 @@ export default function CodeMirrorEditor({
   stickyTopInset,
   paragraphIndent: indentParagraphs = false,
   annotationSlot,
+  onAnnotationAdded,
   chapterAnnotations = false,
 }: CodeMirrorEditorProps) {
   const inkThemeName = useThemeStore(s => s.resolvedTheme)
@@ -214,8 +218,9 @@ export default function CodeMirrorEditor({
   } | null>(null)
 
   const editableRef = useRef(editable)
+  const draftReadonlyRef = useRef(draftReadonly)
   const filePathRef = useRef(filePath)
-  useLayoutEffect(() => { editableRef.current = editable; filePathRef.current = filePath }, [editable, filePath])
+  useLayoutEffect(() => { editableRef.current = editable; draftReadonlyRef.current = draftReadonly; filePathRef.current = filePath }, [editable, draftReadonly, filePath])
   const aiCandidateRef = useRef<{ artifactId: string; textHash: string } | null>(null)
   const inlineRef = useRef<ReturnType<typeof createEditorInlineGeneration> | null>(null)
   const handleResumeAI = async () => {
@@ -631,6 +636,7 @@ export default function CodeMirrorEditor({
     setNoteDraft(null)
     setNoteError(null)
     setBubbleOpen(false)
+    onAnnotationAdded?.()
     view.contentDOM.focus({ preventScroll: true })
   }
 
@@ -651,7 +657,8 @@ export default function CodeMirrorEditor({
   const locateAnnotation = (annotation: EditorInlineAnnotation) => {
     const view = editorRef.current?.view
     if (!view) return
-    view.dispatch({ selection: { anchor: annotation.from, head: annotation.to } })
+    const range = EditorSelection.range(annotation.from, annotation.to)
+    view.dispatch({ selection: range, effects: EditorView.scrollIntoView(range, { y: 'center' }) })
     view.focus()
   }
 
@@ -716,7 +723,7 @@ export default function CodeMirrorEditor({
       </div>
     </aside>
   ) : null
-  const panelBeside = Boolean(annotationPanel && !annotationSlot && !fitContent)
+  const panelBeside = Boolean(annotationPanel && annotationSlot === undefined && !fitContent)
 
   return (
     <div className={fitContent ? 'relative' : clsx('relative h-full flex min-h-0', panelBeside ? 'cm-annotating' : 'flex-col')}
@@ -768,6 +775,7 @@ export default function CodeMirrorEditor({
         onCancel={() => setInlineReview(null)} onCommit={async after => {
           if (filePath !== inlineReview.filePath || inlineReview.sessionKey !== JSON.stringify(getActiveProjectSessionContext()) || editorRef.current?.view?.state.doc.toString() !== inlineReview.before) throw new Error('SOURCE_DRAFT_CHANGED')
           const run = await inlineReview.client.read().catch(() => null)
+          if (draftReadonlyRef.current) throw new Error('DRAFT_NOT_WRITABLE')
           if (!editableRef.current) throw new Error('DRAFT_NOT_EDITABLE')
           if (!run || run.sourceStatus !== 'current' || run.view.status === 'cancelled'
             || !(run.view.candidates ?? run.view.artifacts).some(candidate => candidate.artifactId === inlineReview.candidate.artifactId && candidate.textHash === inlineReview.candidate.textHash && candidate.text === inlineReview.after && candidate.status === 'completed' && candidate.compositionEligible === true)) throw new Error('SOURCE_DRAFT_CHANGED')
@@ -883,7 +891,7 @@ export default function CodeMirrorEditor({
         </div>
       )}
 
-      {annotationPanel && (annotationSlot ? createPortal(annotationPanel, annotationSlot) : annotationPanel)}
+      {annotationPanel && annotationSlot !== null && (annotationSlot ? createPortal(annotationPanel, annotationSlot) : annotationPanel)}
     </div>
   )
 }

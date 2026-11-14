@@ -1017,7 +1017,8 @@
 .inline-annotation-change ins { color: var(--ok); background: var(--ok-soft); text-decoration: none; }
 .inline-annotation-actions { display: inline-flex; flex-wrap: wrap; white-space: normal; align-items: center; gap: var(--s-1); margin: var(--s-1); text-indent: 0; font-family: var(--font-ui); font-size: var(--fs-13); line-height: 1.5; }
 .inline-annotation-actions textarea { min-width: 220px; }
-.inline-annotation-footer { position: fixed; right: var(--s-5); bottom: var(--s-5); z-index: 20; display: flex; gap: var(--s-2); padding: var(--s-2); background: var(--surface); box-shadow: var(--shadow-pop); }
+.inline-annotation-footer { position: fixed; right: var(--s-5); bottom: var(--s-5); z-index: 20; display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2); background: var(--surface); box-shadow: var(--shadow-pop); }
+.inline-annotation-footer > [role="alert"] { max-width: 320px; margin: 0 var(--s-2); font-size: var(--fs-13); color: var(--danger); }
 .annotation-revision-history { margin-top: var(--s-5); }
 .annotation-revision-history .cm-annotation { padding-right: 0; }
 .annotation-revision-history .inline-annotation-prose p { margin: 0; }

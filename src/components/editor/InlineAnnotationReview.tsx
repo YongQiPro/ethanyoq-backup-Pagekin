@@ -5,7 +5,7 @@ import { errorCodeOf } from '../../i18n/app-errors'
 import { createEditorInlineGeneration } from '../../services/editor-inline-generation'
 import { routeModelId } from '../../services/model-routing'
 import { getActiveProjectSessionContext } from '../../shared/project-session-context'
-import type { EditorInlineAnnotation } from '../../shared/editor-inline-generation'
+import { EDITOR_INLINE_INSTRUCTION_MAX_LENGTH, type EditorInlineAnnotation } from '../../shared/editor-inline-generation'
 import { useLocaleStore } from '../../stores/locale-store'
 import { Button } from '../ui/Button'
 
@@ -74,9 +74,14 @@ export default function InlineAnnotationReview({ before, after, annotations, onC
     try {
       await onCommit(pieces.map(piece => piece.kind === 'same' ? piece.text : next[piece.index]!.value).join(''))
     } catch (cause) {
-      setError(errorCodeOf(cause) === 'SOURCE_DRAFT_CHANGED'
+      const code = errorCodeOf(cause)
+      setError(code === 'SOURCE_DRAFT_CHANGED'
         ? text('正文或来源已变化，这次修改不能保存。取消后可重新统一修改。', 'The chapter or its sources changed, so these edits cannot be saved. Cancel and run the revision again.')
-        : text('保存版本失败，修改仍在当前页面，请重试。', 'Could not save the version. Your edits are still here; try again.'))
+        : code === 'DRAFT_NOT_EDITABLE'
+          ? text('修改还在，但正文现在不能编辑，没有保存。等本章任务结束再点「接受全部」，或点「取消」放弃。', 'Your edits are still here, but the chapter cannot be edited right now, so nothing was saved. Click Accept all once the chapter task finishes, or Cancel to drop them.')
+          : code === 'DRAFT_NOT_WRITABLE'
+            ? text('这一稿已定稿或有了新版本，修改没有保存。点「取消」后到当前版本里改。', 'This draft was finalized or replaced by a newer version, so nothing was saved. Click Cancel and edit the current version.')
+            : text('保存版本失败，修改仍在当前页面，请重试。', 'Could not save the version. Your edits are still here; try again.'))
       commitGuard.current = false
     }
     finally { setCommitting(false) }
@@ -99,13 +104,18 @@ export default function InlineAnnotationReview({ before, after, annotations, onC
     const session = getActiveProjectSessionContext()
     const selected = changes[piece.index]?.value || piece.before
     if (!session || !selected) { update(piece.index, { error: text('没有可重新生成的文字', 'No text to regenerate') }); return }
+    const notes = annotations.filter(item => piece.from === piece.to ? item.from <= piece.from && item.to >= piece.from : item.from < piece.to && item.to > piece.from).map(item => item.instruction).join('；')
+    const context = `${before.slice(Math.max(0, piece.from - 160), piece.from)}……${before.slice(piece.to, piece.to + 160)}`
+    const instruction = text(`重新改写所选片段，只输出片段。上下文：${context}。作者意见：${notes}`, `Rewrite only the selected passage. Context: ${context}. Author notes: ${notes}`)
+    if (Array.from(instruction).length > EDITOR_INLINE_INSTRUCTION_MAX_LENGTH) {
+      update(piece.index, { error: text('这处的批注太长，没法重新生成。可以点「编辑」直接改。', 'The notes for this change are too long to regenerate it. Use Edit to change it directly.') })
+      return
+    }
     update(piece.index, { busy: true, accepted: false, editing: false, error: '' })
     const client = createEditorInlineGeneration(session)
     rerollClients.current.add(client)
     try {
-      const notes = annotations.filter(item => piece.from === piece.to ? item.from <= piece.from && item.to >= piece.from : item.from < piece.to && item.to > piece.from).map(item => item.instruction).join('；').slice(0, 1000)
-      const context = `${before.slice(Math.max(0, piece.from - 160), piece.from)}……${before.slice(piece.to, piece.to + 160)}`
-      await client.open({ input: { action: 'instruct', instruction: text(`重新改写所选片段，只输出片段。上下文：${context}。作者意见：${notes}`, `Rewrite only the selected passage. Context: ${context}. Author notes: ${notes}`), documentText: selected, selectedText: selected, from: 0, to: selected.length }, modelId: routeModelId('editor-inline') ?? '', uiActionNonce: crypto.randomUUID() })
+      await client.open({ input: { action: 'instruct', instruction, documentText: selected, selectedText: selected, from: 0, to: selected.length }, modelId: routeModelId('editor-inline') ?? '', uiActionNonce: crypto.randomUUID() })
       const receipt = await client.execute()
       if (receipt.outcome.status !== 'completed' || receipt.outcome.finishReason !== 'stop' || receipt.sourceStatus !== 'current' || !(receipt.run.candidates ?? receipt.run.artifacts).some(candidate => candidate.text === receipt.outcome.content && candidate.status === 'completed' && candidate.compositionEligible)) throw new Error('REROLL_INCOMPLETE')
       const candidate = receipt.outcome.content
@@ -136,7 +146,6 @@ export default function InlineAnnotationReview({ before, after, annotations, onC
         {changes[piece.index]!.error && <span role="alert">{changes[piece.index]!.error}</span>}
       </span>}{closingAfter(position)}
     </span>)}</div>
-    {error && <p role="alert">{error}</p>}
-    <div className="inline-annotation-footer"><Button variant="secondary" disabled={committing} onClick={onCancel}>{text('取消', 'Cancel')}</Button><Button variant="primary" disabled={committing || changes.some(item => item.busy)} onClick={acceptAll}>{committing ? text('保存中…', 'Saving…') : text('接受全部', 'Accept all')}</Button></div>
+    <div className="inline-annotation-footer">{error && <p role="alert">{error}</p>}<Button variant="secondary" disabled={committing} onClick={onCancel}>{text('取消', 'Cancel')}</Button><Button variant="primary" disabled={committing || changes.some(item => item.busy)} onClick={acceptAll}>{committing ? text('保存中…', 'Saving…') : text('接受全部', 'Accept all')}</Button></div>
   </section>
 }
