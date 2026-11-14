@@ -29,7 +29,7 @@ function workflowWriting(projectPath: string | undefined, runs = useWorkflowStor
 
 let selectionRequests = 0
 
-/** 修稿合并或批注修改审阅盖住正文时编辑器接不住：当前标签看它此刻盖没盖，后台标签看切过去会不会自动摆出合并（有可合并修稿）。 */
+/** 正文被修稿合并或批注审阅盖住时编辑器接不住；后台标签按切过去会不会自动摆出合并判断。 */
 function editorReceives(tab: EditorTab, session: ProjectSessionContext): boolean {
   const { coveredProseFile, chapterFacts } = useStageStore.getState()
   if (tab.id === useEditorStore.getState().activeTabId) return coveredProseFile !== tab.filePath

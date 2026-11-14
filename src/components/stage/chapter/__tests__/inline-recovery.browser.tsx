@@ -86,7 +86,7 @@ async function openChapter(chapterNumber = 3, prepare?: (draft: ReturnType<typeo
   await act(async () => { await openDraftTab(meta, `第 ${chapterNumber} 章`, SESSION) })
 }
 
-/** 批注统一修改走另一条运行（runId batch）；选区运行的通道照旧交给前面装好的夹具。 */
+/** 批注统一修改走另一条运行（runId batch），选区运行沿用前面的夹具。 */
 async function withAnnotationReviewBackend() {
   const selectionRun = backend.invoke.getMockImplementation()!
   let batch: { view: { handle: typeof handle; status: string; artifacts: object[] }; modelId: string; sourceStatus: string; context: object } | null = null

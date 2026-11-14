@@ -126,8 +126,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
     reload()
   }, [request, filePath, reload])
 
-  // 交接只交给一个挂着的编辑器：编辑器拿到后清掉 store 里的请求，之后重挂的编辑器不再重开气泡；
-  // 合并视图盖着正文时编辑器没挂，请求留着等它挂上。
+  // 请求只交给挂着的编辑器：拿到后清掉，重挂不再重开气泡；合并视图盖着时留着等它挂上。
   const merging = draft.mergeData !== null
   const recovery = useStageStore(s => !merging && s.selectionRequest?.filePath === filePath && session && sameProjectSessionContext(s.selectionRequest.session, session)
     ? s.selectionRequest : undefined)

@@ -36,7 +36,7 @@ interface StageState {
   writeRequest: { session: ProjectSessionContext; chapterNumber: number } | null
   /** 审稿或修稿刚生成，要这一稿的单章视图重读数据；视图接手后清空。只属于发出时的那次打开，换作品或重新打开即清掉。 */
   chapterRequest: { session: ProjectSessionContext; filePath: string } | null
-  /** 运行侧页点了「继续原选区任务」，要这一稿的单章视图在原选区重开气泡续跑；编辑器挂着时接手并清空。只属于发出时的那次打开，换作品或重新打开即清掉。 */
+  /** 运行侧页「继续原选区任务」的请求；编辑器挂着时接手并清空，换作品或重新打开即清掉。 */
   selectionRequest: { session: ProjectSessionContext; filePath: string; handle: MainGenerationRunHandle; nonce: number } | null
   /** 单章视图的正文被修稿合并或批注修改审阅盖住的稿；选区续跑不交给它。视图卸载或两者都收起即清空。 */
   coveredProseFile: string | null
