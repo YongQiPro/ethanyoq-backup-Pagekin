@@ -126,15 +126,14 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
     reload()
   }, [request, filePath, reload])
 
-  // 请求只交给挂着的编辑器：拿到后清掉，重挂不再重开气泡；合并视图盖着时留着等它挂上。
-  const merging = draft.mergeData !== null
-  const recovery = useStageStore(s => !merging && s.selectionRequest?.filePath === filePath && session && sameProjectSessionContext(s.selectionRequest.session, session)
+  // 请求只交给作者看得见的编辑器：拿到后清掉，重挂不再重开气泡；合并视图或批注审阅盖着时留着等它露出来。
+  const [reviewing, setReviewing] = useState(false)
+  const covered = draft.mergeData !== null || reviewing
+  const recovery = useStageStore(s => !covered && s.selectionRequest?.filePath === filePath && session && sameProjectSessionContext(s.selectionRequest.session, session)
     ? s.selectionRequest : undefined)
   useEffect(() => {
     if (recovery) useStageStore.setState({ selectionRequest: null, sheet: null })
   }, [recovery])
-  const [reviewing, setReviewing] = useState(false)
-  const covered = merging || reviewing
   useEffect(() => {
     if (!covered) return
     useStageStore.setState({ coveredProseFile: filePath })

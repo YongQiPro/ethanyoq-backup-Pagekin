@@ -187,7 +187,7 @@ export default function CodeMirrorEditor({
 
   // ===== Bubble Menu 逻辑 =====
   const [bubbleOpen, setBubbleOpen] = useState(false)
-  const [bubblePos, setBubblePos] = useState({ top: 0, left: 0, inView: true })
+  const [bubblePos, setBubblePos] = useState({ top: 0, left: 0, inView: false })
   const [aiResult, setAiResult] = useState<string | null>(null)
   const [aiError, setAiError] = useState<string | null>(null)
   const [copyFailedFor, setCopyFailedFor] = useState<string | null>(null)
@@ -270,7 +270,8 @@ export default function CodeMirrorEditor({
       view?.dispatch({ selection: { anchor: from, head: to }, effects: EditorView.scrollIntoView(from, { y: 'center' }) })
       view?.focus()
       const coords = view?.coordsAtPos(from)
-      setBubblePos({ top: coords?.top ?? 150, left: coords?.left ?? 200, inView: true })
+      // 滚动还没生效，位置测出在视口里之前不算作者看见。
+      setBubblePos({ top: coords?.top ?? 150, left: coords?.left ?? 200, inView: false })
       setBubbleOpen(true)
       if (resumable) void handleResumeAI()
     }).catch(() => {
@@ -287,7 +288,7 @@ export default function CodeMirrorEditor({
 
   // 看得见才回执；卸载不回执，运行留在侧页。
   const settingsOpen = useLayoutStore(s => s.settingsOpen)
-  const previewShown = bubbleOpen && bubblePos.inView && bubblePos.top !== 0 && !!aiResult && !settingsOpen
+  const previewShown = bubbleOpen && bubblePos.inView && !!aiResult && !settingsOpen
   useEffect(() => { if (previewShown) inlineRef.current?.delivered() }, [previewShown, aiResult])
   useEffect(() => { if (!settingsOpen) inlineReview?.client.delivered() }, [settingsOpen, inlineReview])
   const reviewing = inlineReview !== null
