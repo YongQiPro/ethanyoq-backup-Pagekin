@@ -1,6 +1,7 @@
 import { ipc } from './ipc-client'
 import type { MainGenerationRunHandle } from './generation/generation-runtime'
 import type { ProjectSessionContext } from '../shared/ipc-channels'
+import { globalEventBus } from '../shared/event-bus'
 import type { EditorInlineInput, EditorInlineRecovery } from '../shared/editor-inline-generation'
 
 const hasEpoch = (handle: MainGenerationRunHandle) => typeof handle.epoch === 'string' && handle.epoch.trim().length > 0
@@ -76,7 +77,8 @@ export function createEditorInlineGeneration(sessionInput: ProjectSessionContext
     async cancel() { cancelled = true; if (opening) await opening.catch(() => {}); await cancelKnown() },
     // 回执失败不重试：运行仍列在侧页。
     delivered() {
-      if (recovery && !detached) void ipc.invokeWithProjectSession(session, 'editor-inline:delivered', { handle: recovery.view.handle }).catch(() => {})
+      if (recovery && !detached) void ipc.invokeWithProjectSession(session, 'editor-inline:delivered', { handle: recovery.view.handle })
+        .then(() => globalEventBus.emit('EDITOR_RECOVERY_DELIVERED', { projectSession: session }), () => {})
     },
     detach() { detached = true },
   }

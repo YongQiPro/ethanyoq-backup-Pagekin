@@ -36,10 +36,10 @@ interface StageState {
   writeRequest: { session: ProjectSessionContext; chapterNumber: number } | null
   /** 审稿或修稿刚生成，要这一稿的单章视图重读数据；视图接手后清空。只属于发出时的那次打开，换作品或重新打开即清掉。 */
   chapterRequest: { session: ProjectSessionContext; filePath: string } | null
-  /** 运行侧页点了「继续原选区任务」，要这一稿的单章视图在原选区重开气泡续跑；视图接手后清空。只属于发出时的那次打开，换作品或重新打开即清掉。 */
+  /** 运行侧页「继续原选区任务」的请求；编辑器挂着时接手并清空，换作品或重新打开即清掉。 */
   selectionRequest: { session: ProjectSessionContext; filePath: string; handle: MainGenerationRunHandle; nonce: number } | null
-  /** 单章视图正在摆修稿合并、不渲染编辑器的稿；选区续跑不交给它。视图卸载或收起合并即清空。 */
-  mergeViewFile: string | null
+  /** 单章视图的正文被修稿合并或批注修改审阅盖住的稿；选区续跑不交给它。视图卸载或两者都收起即清空。 */
+  coveredProseFile: string | null
   /** 各稿的审稿与修稿记录（按稿 id），流程脊与单章视图据此判断一章走到哪一步；只属于读出它的那次打开。 */
   chapterFacts: { session: ProjectSessionContext; byDraft: Readonly<Record<number, ChapterFacts>> } | null
   /** 流程脊为这次打开读完过一遍各稿的审稿与修稿记录。没读完时流程脊不列阶段与章节，章节阶段不会先按稿状态估计再改。 */
@@ -56,7 +56,7 @@ export const useStageStore = create<StageState>()(() => ({
   writeRequest: null,
   chapterRequest: null,
   selectionRequest: null,
-  mergeViewFile: null,
+  coveredProseFile: null,
   chapterFacts: null,
   spineFacts: null,
 }))

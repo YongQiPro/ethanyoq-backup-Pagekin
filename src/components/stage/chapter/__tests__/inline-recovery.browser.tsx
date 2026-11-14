@@ -86,8 +86,33 @@ async function openChapter(chapterNumber = 3, prepare?: (draft: ReturnType<typeo
   await act(async () => { await openDraftTab(meta, `第 ${chapterNumber} 章`, SESSION) })
 }
 
-const executions = () => backend.invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:execute').length
-const deliveries = () => backend.invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:delivered').length
+/** 批注统一修改走另一条运行（runId batch），选区运行沿用前面的夹具。 */
+async function withAnnotationReviewBackend() {
+  const selectionRun = backend.invoke.getMockImplementation()!
+  let batch: { view: { handle: typeof handle; status: string; artifacts: object[] }; modelId: string; sourceStatus: string; context: object } | null = null
+  const isBatch = (args: unknown[]) => (args[0] as { handle?: { runId?: string } } | undefined)?.handle?.runId === 'batch'
+  backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+    if (channel === 'editor-inline:begin') {
+      const input = (args[0] as { input: { documentText: string } }).input
+      batch = { view: { handle: { ...handle, epoch: SESSION.leaseId, runId: 'batch' }, status: 'running', artifacts: [] }, modelId: 'glm', sourceStatus: 'current',
+        context: { ...input, kind: 'author-draft', documentHash: await sha256(input.documentText) } }
+      return batch
+    }
+    if (channel === 'editor-inline:execute' && isBatch(args)) {
+      const content = ORIGINAL.replace(SELECTED, '他第三次展开信纸，上面只有两个字：等我。')
+      const run = { ...batch!.view, status: 'completed', artifacts: [{ ...batch!.view.handle, artifactId: 'proof', textHash: 'proof-hash', text: content, status: 'completed', compositionEligible: true }] }
+      batch = { ...batch!, view: run }
+      return { run, sourceStatus: 'current', outcome: { status: 'completed', content, finishReason: 'stop', receipt: { finishReason: 'stop' } } }
+    }
+    if (channel === 'editor-inline:read-recovery' && isBatch(args)) return batch
+    if (channel === 'editor-inline:delivered' && isBatch(args)) return undefined
+    return selectionRun(channel, ...args)
+  })
+}
+
+const executions = () => backend.invoke.mock.calls.filter(([channel, request]) => channel === 'editor-inline:execute' && (request as { handle: { runId: string } }).handle.runId === handle.runId).length
+const recoveryReads = () => backend.invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:read-recovery').length
+const deliveries = () => backend.invoke.mock.calls.filter(([channel, request]) => channel === 'editor-inline:delivered' && (request as { handle: { runId: string } }).handle.runId === handle.runId).length
 const withMergeableRevision = (draft: ReturnType<typeof backend.addDraft>) => { backend.addReview(draft); backend.addRevision(draft, 'refine') }
 
 async function expectContinuedInSheet() {
@@ -393,6 +418,130 @@ describe('运行侧页「继续原选区任务」', () => {
 
     await expectContinuedInSheet()
     await expect.element(page.getByText('修订仍可查看但不能合并', { exact: false })).toBeVisible()
+  })
+
+  it('取消气泡里的预览后打开修稿合并再「稍后再合并」：已取消的预览不再弹出', async () => {
+    await interruptedSelectionRun(ORIGINAL)
+    await mount()
+    await openChapter(3, withMergeableRevision)
+    await act(async () => page.getByRole('button', { name: '稍后再合并' }).click())
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+    await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
+    const bubble = page.getByRole('toolbar', { name: '选中文字的操作' })
+    await expect.element(bubble.getByText(SUGGESTION)).toBeVisible()
+    await act(async () => bubble.getByRole('button', { name: '取消' }).click())
+    await expect.element(bubble).not.toBeInTheDocument()
+    const readsBefore = recoveryReads()
+
+    await act(async () => page.getByRole('button', { name: '打开修稿合并' }).click())
+    await expect.element(page.getByRole('button', { name: '完成合并' })).toBeVisible()
+    await act(async () => page.getByRole('button', { name: '稍后再合并' }).click())
+    await vi.waitFor(() => expect(host!.querySelector('.cm-editor')).not.toBeNull())
+    await act(async () => new Promise(resolve => setTimeout(resolve, 100)))
+
+    expect(recoveryReads()).toBe(readsBefore)
+    expect(host!.querySelector('[role="toolbar"]')).toBeNull()
+  })
+
+  it('交接到达时正文被修稿合并视图盖着：稍后再合并后编辑器挂上，气泡照常续跑', async () => {
+    await interruptedSelectionRun(ORIGINAL)
+    await mount()
+    await openChapter(3, withMergeableRevision)
+    await expect.element(page.getByRole('button', { name: '完成合并' })).toBeVisible()
+    await act(async () => useStageStore.setState({ selectionRequest: { session: SESSION, filePath: chapterTab(3)!, handle, nonce: 1 } }))
+
+    await act(async () => page.getByRole('button', { name: '稍后再合并' }).click())
+
+    await expect.element(page.getByRole('toolbar', { name: '选中文字的操作' }).getByText(SUGGESTION)).toBeVisible()
+  })
+
+  it('运行侧页一直开着：设置页盖住时建议生成完、卡片列着，关掉设置页看到气泡里的建议后卡片随即消失', async () => {
+    let finish!: () => void
+    await interruptedSelectionRun(ORIGINAL, new Promise<void>(resolve => { finish = resolve }))
+    await mount()
+    await openChapter()
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+    await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
+    await vi.waitFor(() => expect(executions()).toBe(1))
+    await act(async () => useLayoutStore.setState({ settingsOpen: true }))
+    await act(async () => finish())
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+    const card = page.getByRole('article').filter({ hasText: '编辑器选区建议' })
+    await expect.element(card.getByText(SUGGESTION)).toBeVisible()
+
+    await act(async () => useLayoutStore.setState({ settingsOpen: false }))
+
+    await vi.waitFor(() => expect(deliveries()).toBe(1))
+    await expect.element(card).not.toBeInTheDocument()
+    expect(useStageStore.getState().sheet).not.toBeNull()
+  })
+
+  it('运行侧页一直开着：回执没送到主进程，卡片照旧列着', async () => {
+    let finish!: () => void
+    await interruptedSelectionRun(ORIGINAL, new Promise<void>(resolve => { finish = resolve }))
+    const fixture = backend.invoke.getMockImplementation()!
+    backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'editor-inline:delivered') throw new Error('回执失败')
+      return fixture(channel, ...args)
+    })
+    await mount()
+    await openChapter()
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+    await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
+    await vi.waitFor(() => expect(executions()).toBe(1))
+    await act(async () => useLayoutStore.setState({ settingsOpen: true }))
+    await act(async () => finish())
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+
+    await act(async () => useLayoutStore.setState({ settingsOpen: false }))
+
+    await vi.waitFor(() => expect(deliveries()).toBe(1))
+    await act(async () => new Promise(resolve => setTimeout(resolve, 100)))
+    await expect.element(page.getByRole('article').filter({ hasText: '编辑器选区建议' }).getByText(SUGGESTION)).toBeVisible()
+  })
+
+  it('批注修改审阅摆着时点「继续原选区任务」：不交给被审阅盖住的编辑器，在侧页续跑，审阅留着', async () => {
+    await interruptedSelectionRun(ORIGINAL)
+    await withAnnotationReviewBackend()
+    await mount()
+    await openChapter()
+    await act(async () => page.getByText(SELECTED, { exact: true }).click({ clickCount: 3 }))
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill('写出信纸上的字'))
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('button', { name: '统一修改（1）' }).click())
+    const review = page.getByRole('region', { name: '批注修改对比' })
+    await expect.element(review).toBeVisible()
+    await act(async () => useStageStore.setState({ sheet: { kind: 'run', tab: 'active' } }))
+
+    await act(async () => page.getByRole('button', { name: '继续原选区任务' }).click())
+
+    await expectContinuedInSheet()
+    expect(host!.querySelector('[role="toolbar"]')).toBeNull()
+    await expect.element(review).toBeVisible()
+  })
+
+  it('交接在批注修改审阅摆着时才写入（设置页未保存延后）：审阅盖着不交，取消审阅后气泡照常续跑', async () => {
+    await interruptedSelectionRun(ORIGINAL)
+    await withAnnotationReviewBackend()
+    await mount()
+    await openChapter()
+    await act(async () => page.getByText(SELECTED, { exact: true }).click({ clickCount: 3 }))
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill('写出信纸上的字'))
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('button', { name: '统一修改（1）' }).click())
+    const review = page.getByRole('region', { name: '批注修改对比' })
+    await expect.element(review).toBeVisible()
+
+    await act(async () => useStageStore.setState({ selectionRequest: { session: SESSION, filePath: chapterTab(3)!, handle, nonce: 1 } }))
+    await act(async () => new Promise(resolve => setTimeout(resolve, 100)))
+    expect(executions()).toBe(0)
+    expect(host!.querySelector('[role="toolbar"]')).toBeNull()
+
+    await act(async () => review.getByRole('button', { name: '取消' }).click())
+
+    await expect.element(page.getByRole('toolbar', { name: '选中文字的操作' }).getByText(SUGGESTION)).toBeVisible()
   })
 
   it('第一次在气泡里读不出原运行，再从侧页点「继续原选区任务」会重新读取并续跑', async () => {

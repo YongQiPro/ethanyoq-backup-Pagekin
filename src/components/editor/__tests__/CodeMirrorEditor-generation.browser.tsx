@@ -619,6 +619,30 @@ describe('CodeMirror editor AI generation boundary', () => {
     expect(container.querySelector('.cm-selbar')?.getBoundingClientRect().bottom ?? -1).toBeLessThanOrEqual(0)
   })
 
+  it('原选区滚出视口时生成完成不回执，滚回来看见预览才回执', async () => {
+    deferStream = true
+    const answer = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => channel === 'editor-inline:delivered' ? undefined : answer(channel, ...args))
+    const delivered = () => invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:delivered')
+    await act(async () => root.render(<>
+      <input aria-label="外部输入" />
+      <div data-testid="chapter-scroller" style={{ height: 300, overflow: 'auto' }}><CodeMirrorEditor content={LONG_CHAPTER} mode="prose" fitContent /></div>
+    </>))
+    await selectLine('第1段原文', { exact: true })
+    await act(async () => page.getByRole('button', { name: '润色' }).click())
+    await act(async () => page.getByRole('textbox', { name: '外部输入' }).fill('输入'))
+    await scrollChapterTo(1200)
+
+    await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: '第一段新文', finishReason: 'stop' } as never))
+    await nextFrames()
+    expect(container.querySelector('.cm-selbar')?.getBoundingClientRect().bottom ?? -1).toBeLessThanOrEqual(0)
+    expect(delivered()).toEqual([])
+
+    await scrollChapterTo(0)
+    await expect.element(page.getByText('第一段新文')).toBeInViewport()
+    await vi.waitFor(() => expect(delivered()).toHaveLength(1))
+  })
+
   it('lets the note form leave with its selection and keeps the typed note on return', async () => {
     await act(async () => root.render(
       <div data-testid="chapter-scroller" style={{ height: 300, overflow: 'auto' }}><CodeMirrorEditor content={LONG_CHAPTER} mode="prose" fitContent /></div>,
@@ -855,6 +879,31 @@ it.each([false, true])('明确 handle 恢复原候选；文件改变=%s 时只�
   if (changedFile) await expect.element(page.getByText('正文或原目标已变化，结果未应用；你仍可复制预览内容')).toBeVisible()
   expect(invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:read-recovery')).toHaveLength(2)
   expect(invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:delivered').map(([, request]) => request)).toEqual([{ handle }])
+})
+
+it('明确 handle 恢复的建议在原选区滚不进视口时不回执', async () => {
+  const handle = { projectId: 'editor-project', epoch: 'editor-epoch', rootActionId: '原预算', runId: '视口外运行' }
+  const documentText = Array.from({ length: 60 }, (_, i) => `第${i + 1}段原文`).join('\n\n')
+  const target = '第60段原文'
+  const from = documentText.indexOf(target)
+  const documentHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(documentText))), byte => byte.toString(16).padStart(2, '0')).join('')
+  invoke.mockImplementation(async (channel: string) => channel === 'editor-inline:delivered' ? undefined
+    : { view: { handle, status: 'completed', artifacts: [{ ...handle, artifactId: 'proof', textHash: 'proof-hash', text: '末段新文', status: 'completed', compositionEligible: true }] }, modelId: '原模型', sourceStatus: 'current', context: { action: 'refine', kind: 'author-draft', documentText, documentHash, from, to: from + target.length, selectedText: target } })
+  await act(async () => root.render(<div data-testid="chapter-scroller" style={{ height: 300, overflow: 'auto' }} />))
+  Object.defineProperty(container.querySelector('[data-testid="chapter-scroller"]')!, 'scrollTop', { configurable: true, get: () => 0, set: () => {} })
+
+  await act(async () => root.render(<div data-testid="chapter-scroller" style={{ height: 300, overflow: 'auto' }}><CodeMirrorEditor content={documentText} mode="prose" fitContent recoveryHandle={handle} /></div>))
+  await vi.waitFor(() => expect(invoke.mock.calls.some(([channel]) => channel === 'editor-inline:read-recovery')).toBe(true))
+  await nextFrames()
+  await nextFrames()
+  await act(async () => new Promise(resolve => setTimeout(resolve, 100)))
+
+  const seen = Array.from(container.querySelectorAll('.cm-selbar')).some(bar => {
+    const rect = bar.getBoundingClientRect()
+    return bar.textContent?.includes('末段新文') && rect.bottom > 0 && rect.top < window.innerHeight
+  })
+  expect(seen).toBe(false)
+  expect(invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:delivered')).toEqual([])
 })
 
 it('明确 handle 恢复按意见改的候选时显示当时的意见', async () => {

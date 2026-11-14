@@ -126,20 +126,19 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
     reload()
   }, [request, filePath, reload])
 
-  // 句柄先存进本地 state 再清掉 store 里的请求，重新挂载时不再重开气泡。
-  const requested = useStageStore(s => s.selectionRequest?.filePath === filePath && session && sameProjectSessionContext(s.selectionRequest.session, session)
+  // 请求只交给看得见的编辑器；被合并视图或批注审阅盖住时留在 store，露出后再交。交接后清掉，重挂不会重开气泡。
+  const [reviewing, setReviewing] = useState(false)
+  const covered = draft.mergeData !== null || reviewing
+  const recovery = useStageStore(s => !covered && s.selectionRequest?.filePath === filePath && session && sameProjectSessionContext(s.selectionRequest.session, session)
     ? s.selectionRequest : undefined)
-  const [recovery, setRecovery] = useState(requested)
-  if (requested && requested.nonce !== recovery?.nonce) setRecovery(requested)
   useEffect(() => {
-    if (requested) useStageStore.setState({ selectionRequest: null, sheet: null })
-  }, [requested])
-  const merging = draft.mergeData !== null
+    if (recovery) useStageStore.setState({ selectionRequest: null, sheet: null })
+  }, [recovery])
   useEffect(() => {
-    if (!merging) return
-    useStageStore.setState({ mergeViewFile: filePath })
-    return () => useStageStore.setState({ mergeViewFile: null })
-  }, [merging, filePath])
+    if (!covered) return
+    useStageStore.setState({ coveredProseFile: filePath })
+    return () => useStageStore.setState({ coveredProseFile: null })
+  }, [covered, filePath])
 
   const title = blueprint?.title || draft.meta?.chapterTitle || ''
   const units = charCount.toLocaleString(locale)
@@ -206,6 +205,7 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
                 onSave={body => draft.save(body)}
                 annotationSlot={sheetFree ? sheetSlot : null}
                 onAnnotationAdded={() => useStageStore.setState({ sheet: null })}
+                onReviewChange={setReviewing}
                 chapterAnnotations
                 onCommitAnnotations={async (before, after, annotations) => {
                   await draft.commitAnnotations(before, after, annotations)
