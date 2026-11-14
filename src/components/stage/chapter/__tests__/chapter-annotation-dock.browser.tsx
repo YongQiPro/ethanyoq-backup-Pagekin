@@ -12,12 +12,13 @@ import { useLocaleStore } from '../../../../stores/locale-store'
 import { useStageStore } from '../../../../stores/navigation/stage-store'
 import { openDraftTab } from '../../../../stores/open-draft-tab'
 import { useProjectStore } from '../../../../stores/project-store'
+import { useWorkflowStore } from '../../../../stores/workflow-store'
 import StageWorkspace from '../../StageWorkspace'
-import { BLUEPRINT, SESSION, chapterProject, createChapterBackend, generationModel } from './chapter-fixture'
+import { BLUEPRINT, ORIGINAL, SESSION, chapterProject, createChapterBackend, generationModel } from './chapter-fixture'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-const original = { editor: useEditorStore.getState(), project: useProjectStore.getState(), drafts: useDraftStore.getState(), stage: useStageStore.getState(), llm: useLLMStore.getState() }
+const original = { editor: useEditorStore.getState(), project: useProjectStore.getState(), drafts: useDraftStore.getState(), stage: useStageStore.getState(), llm: useLLMStore.getState(), workflow: useWorkflowStore.getState() }
 let root: Root
 let host: HTMLDivElement
 let backend: ReturnType<typeof createChapterBackend>
@@ -64,6 +65,7 @@ afterEach(async () => {
   useDraftStore.setState(original.drafts, true)
   useStageStore.setState(original.stage, true)
   useLLMStore.setState(original.llm, true)
+  useWorkflowStore.setState(original.workflow, true)
 })
 
 const reviewSheet = () => page.getByRole('complementary', { name: /审稿/ })
@@ -132,4 +134,55 @@ it('批注的原文滚出纸面后点「定位批注」：原文滚回可见范�
   await act(async () => page.getByRole('button', { name: '定位批注 1' }).click())
 
   await expect.poll(visible).toBe(true)
+})
+
+async function openAnnotationReview() {
+  const answer = backend.invoke.getMockImplementation()!
+  let recovery: { view: object; modelId: string; sourceStatus: string; context: object } | null = null
+  backend.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+    if (channel === 'editor-inline:begin') {
+      const input = (args[0] as { input: { documentText: string } }).input
+      const documentHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input.documentText))), byte => byte.toString(16).padStart(2, '0')).join('')
+      const handle = { projectId: SESSION.projectId, epoch: SESSION.leaseId, rootActionId: 'root', runId: 'batch' }
+      recovery = { view: { handle, status: 'running', artifacts: [] }, modelId: 'grok', sourceStatus: 'current', context: { ...input, kind: 'author-draft', documentHash } }
+      return recovery
+    }
+    if (channel === 'editor-inline:execute') {
+      const content = ORIGINAL.replace('他第三次展开信纸。', '他第三次展开信纸，上面只有两个字：等我。')
+      const run = { ...recovery!.view, status: 'completed', artifacts: [{ ...(recovery!.view as { handle: object }).handle, artifactId: 'proof', textHash: 'proof-hash', text: content, status: 'completed', compositionEligible: true }] }
+      recovery = { ...recovery!, view: run }
+      return { run, sourceStatus: 'current', outcome: { status: 'completed', content, finishReason: 'stop', receipt: { finishReason: 'stop' } } }
+    }
+    if (channel === 'editor-inline:read-recovery') return recovery
+    if (channel === 'editor-inline:delivered') return undefined
+    return answer(channel, ...args)
+  })
+  await openChapter({ reviewed: false, content: ORIGINAL })
+  await annotate('他第三次展开信纸。', '写出信纸上的字')
+  await act(async () => page.getByRole('button', { name: '统一修改（1）' }).click())
+  const review = page.getByRole('region', { name: '批注修改对比' })
+  await expect.element(review).toBeVisible()
+  return review
+}
+const annotationCommits = () => backend.invoke.mock.calls.filter(([channel]) => channel === 'db:annotation-commit')
+
+it('批注修改审阅到一半，这一稿被定稿：点「接受全部」提示到当前版本里改，不叫作者等任务结束', async () => {
+  const review = await openAnnotationReview()
+
+  await act(async () => useEditorStore.setState(state => ({ tabs: state.tabs.map(tab => ({ ...tab, draftStatus: 'finalized' as const })) })))
+  await act(async () => review.getByRole('button', { name: '接受全部' }).click())
+
+  await expect.element(review.getByRole('alert')).toHaveTextContent('这一稿已定稿或有了新版本，修改没有保存。点「取消」后到当前版本里改。')
+  expect(annotationCommits()).toEqual([])
+})
+
+it('批注修改审阅到一半，本章被任务占用：点「接受全部」仍提示等本章任务结束', async () => {
+  const review = await openAnnotationReview()
+
+  await act(async () => useWorkflowStore.setState({ activeRuns: [{ id: 'review-run', type: 'chapter_creation', title: '审稿第 3 章',
+    status: 'running', projectPath: SESSION.projectPath, resourceKeys: ['chapter:3'], steps: [], currentStepIndex: 0, logs: [] } as never] }))
+  await act(async () => review.getByRole('button', { name: '接受全部' }).click())
+
+  await expect.element(review.getByRole('alert')).toHaveTextContent('修改还在，但正文现在不能编辑，没有保存。等本章任务结束再点「接受全部」，或点「取消」放弃。')
+  expect(annotationCommits()).toEqual([])
 })
