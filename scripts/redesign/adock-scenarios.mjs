@@ -10,6 +10,7 @@ const NOTE = '沉船写得更具体'
 const REVISED = STAGE_SAMPLE.drafts[3].text.replace('北堤外沉了一条船', '北堤外沉了一条运煤的双桅船')
 
 const dock = page => page.getByRole('region', { name: '本章批注' })
+const marks = page => chapterView.prose(page).locator('.cm-editor-annotation').count()
 const proseWidth = page => chapterView.view(page).locator('.stage-ch-prose').evaluate(node => Math.round(node.getBoundingClientRect().width))
 
 async function annotate(page) {
@@ -150,10 +151,12 @@ export const ADOCK_SCENARIOS = {
     await runSheet.openFromPalette(page)
     measured.reviewUnderRun = await chapterView.reviewSheet(page).count()
     assert.equal(measured.reviewUnderRun, 0, '运行侧页顶替审稿报告')
+    await shoot('adock-r4-run-before')
     await annotate(page)
     await dock(page).waitFor({ state: 'visible' })
     measured.runWhileDocked = await runSheet.sheet(page).count()
     assert.equal(measured.runWhileDocked, 0, '加批注后运行侧页让位')
+    await shoot('adock-r4-run-docked')
 
     await dock(page).getByRole('button', { name: '删除批注 1' }).click()
     await runSheet.waitUntilOpen(page)
@@ -161,6 +164,9 @@ export const ADOCK_SCENARIOS = {
     measured.reviewAfterDelete = await chapterView.reviewSheet(page).count()
     assert.equal(measured.dockAfterDelete, 0)
     assert.equal(measured.reviewAfterDelete, 0, '只放回运行侧页，不另开审稿报告')
+    measured.marksAfterDelete = await marks(page)
+    assert.equal(measured.marksAfterDelete, 0, '正文里不留批注底色')
+    await chapterView.prose(page).getByText(PARAGRAPH).first().click()
     await shoot('adock-r4-run-back')
     return measured
   } },
@@ -181,7 +187,35 @@ export const ADOCK_SCENARIOS = {
     measured.runAfterClear = await runSheet.sheet(page).count()
     assert.equal(measured.reviewAfterClear, 0, '之前侧栏空着，清空批注后仍空着')
     assert.equal(measured.runAfterClear, 0)
+    measured.marksAfterClear = await marks(page)
+    assert.equal(measured.marksAfterClear, 0, '正文里不留批注底色')
+    await chapterView.prose(page).getByText(PARAGRAPH).first().click()
     await shoot('adock-r5-empty')
+    return measured
+  } },
+
+  'adock-restore-empty-commit': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page, fake, shoot }) => {
+    const measured = {}
+    fake.replyReview(prompt => prompt.includes(NOTE) ? REVISED : null)
+    await chapterView.open(page, 3)
+    await chapterView.reviewSheet(page).waitFor({ state: 'visible' })
+    await chapterView.reviewSheet(page).getByRole('button', { name: '关闭审稿报告' }).first().click()
+    await chapterView.reviewSheet(page).waitFor({ state: 'hidden' })
+    await annotate(page)
+    await dock(page).getByRole('button', { name: '统一修改（1）' }).click()
+    const review = page.getByRole('region', { name: '批注修改对比' })
+    await review.waitFor({ state: 'visible', timeout: 60_000 })
+    await review.getByRole('button', { name: '接受全部' }).click()
+    await review.waitFor({ state: 'hidden', timeout: 30_000 })
+    await chapterView.prose(page).getByText('北堤外沉了一条运煤的双桅船').waitFor({ state: 'visible' })
+    await page.waitForTimeout(1000)
+    measured.reviewAfterCommit = await chapterView.reviewSheet(page).count()
+    measured.runAfterCommit = await runSheet.sheet(page).count()
+    measured.dockAfterCommit = await dock(page).count()
+    assert.equal(measured.reviewAfterCommit, 0, '之前侧栏空着，提交后不替作者打开报告')
+    assert.equal(measured.runAfterCommit, 0)
+    assert.equal(measured.dockAfterCommit, 0)
+    await shoot('adock-r6-empty-commit')
     return measured
   } },
 }

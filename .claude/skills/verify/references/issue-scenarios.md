@@ -297,5 +297,6 @@ RD 之后为具体缺陷补的场景。修同一块功能时，先在这里找�
 | `adock-copy` | 润色生成中作者改了正文：点「替换」不应用并提示只可复制，「复制」把预览原文交给剪贴板（`adock-3-copy`） | 第 3 章润色预览 | 是 | #653 |
 | `adock-readonly` | 批注统一修改进入逐处审阅后点「重新审稿」，审稿卡在夹具模型的门上：点「接受全部」不写入，固定底栏里提示等任务结束（`adock-4-readonly`）；审稿结束后再点就写入 | 第 3 章逐处审阅 | 是 | #653 |
 | `adock-restore-review` | 第 3 章审稿报告默认展开（`adock-r1-review-before`）；加批注后报告让位给「本章批注 · 1」（`adock-r2-docked`）；统一修改「接受全部」写进正文后批注坞收起、报告回来（`adock-r3-review-back`） | 第 3 章逐处审阅 | 是 | #653 |
-| `adock-restore-run` | 第 3 章从 Ctrl K 打开运行侧页顶替报告，加批注后运行侧页让位；删掉唯一一条批注后运行侧页回来，不另开报告（`adock-r4-run-back`） | 第 3 章 | 否 | #653 |
+| `adock-restore-run` | 第 3 章从 Ctrl K 打开运行侧页顶替报告（`adock-r4-run-before`），加批注后运行侧页让位（`adock-r4-run-docked`）；删掉唯一一条批注后运行侧页回来，不另开报告，正文不留批注底色（`adock-r4-run-back`） | 第 3 章 | 否 | #653 |
 | `adock-restore-empty` | 第 3 章先关掉审稿报告再加批注，清空后侧栏仍空着（`adock-r5-empty`） | 第 3 章 | 否 | #653 |
+| `adock-restore-empty-commit` | 第 3 章先关掉审稿报告再加批注，统一修改「接受全部」写进正文后侧栏仍空着（`adock-r6-empty-commit`） | 第 3 章逐处审阅 | 是 | #653 |
