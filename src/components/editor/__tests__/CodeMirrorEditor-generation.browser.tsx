@@ -359,6 +359,22 @@ describe('CodeMirror editor AI generation boundary', () => {
     expect(commit).toHaveBeenCalledTimes(1)
   })
 
+  it('写入时主进程报这一稿已不能写（已定稿或有了新版本），不让作者重试，指向当前版本', async () => {
+    deferStream = true
+    const commit = vi.fn(async () => { throw new Error("Error invoking remote method 'db:annotation-commit': Error: DRAFT_NOT_WRITABLE") })
+    await act(async () => root.render(<CodeMirrorEditor content="林岚走进北塔" mode="prose" onCommitAnnotations={commit} />))
+    await selectLine('林岚走进北塔')
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill('改成第一人称'))
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('button', { name: '统一修改（1）' }).click())
+    await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: '我走进北塔', finishReason: 'stop' } as never))
+
+    await act(async () => page.getByRole('button', { name: '接受全部' }).click())
+
+    await expect.element(page.getByText('这一稿已定稿或有了新版本，修改没有保存。点「取消」后到当前版本里改。')).toBeVisible()
+  })
+
   it('重新生成一处修改时只带这一处的批注，不带紧挨着的另一段的批注', async () => {
     deferStream = true
     await act(async () => root.render(<CodeMirrorEditor content="林岚走进北塔" mode="prose" onCommitAnnotations={vi.fn(async () => {})} />))
