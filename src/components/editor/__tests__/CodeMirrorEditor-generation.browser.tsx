@@ -7,6 +7,7 @@ import { EditorView } from '@codemirror/view'
 import { useProjectStore } from '../../../stores/project-store'
 import { useLLMStore } from '../../../stores/llm-store'
 import { useLocaleStore } from '../../../stores/locale-store'
+import { useLayoutStore } from '../../../stores/layout-store'
 import CodeMirrorEditor from '../CodeMirrorEditor'
 import { commandKeyLabel, IS_MAC } from '../../stage/shortcut-keys'
 import { EDITOR_INLINE_INSTRUCTION_MAX_LENGTH } from '../../../shared/editor-inline-generation'
@@ -103,6 +104,7 @@ afterEach(async () => {
   useProjectStore.setState({ currentProject: null })
   useLLMStore.setState({ defaultModelId: null, models: [], stageModelIds: {} })
   useLocaleStore.setState({ locale: 'zh-CN' })
+  useLayoutStore.setState({ settingsOpen: false })
   Reflect.deleteProperty(window, 'aiNovelAPI')
   Reflect.deleteProperty(navigator, 'clipboard')
 })
@@ -264,6 +266,27 @@ describe('CodeMirror editor AI generation boundary', () => {
     expect(commit).not.toHaveBeenCalled()
     await act(async () => page.getByRole('button', { name: '接受全部' }).click())
     expect(commit).toHaveBeenCalledWith('林岚走进北塔', '我走进北塔', [expect.objectContaining({ instruction: '改成第一人称' })])
+  })
+
+  it('统一修改的结果摆进审阅对比、作者看得见时才回执，设置页盖住时等关掉再回执', async () => {
+    deferStream = true
+    const answer = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => channel === 'editor-inline:delivered' ? undefined : answer(channel, ...args))
+    const delivered = () => invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:delivered').map(([, request]) => request)
+    await act(async () => root.render(<CodeMirrorEditor content="林岚走进北塔" mode="prose" onCommitAnnotations={vi.fn(async () => {})} />))
+    await selectLine('林岚走进北塔')
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('textbox', { name: '批注意见' }).fill('改成第一人称'))
+    await act(async () => page.getByRole('button', { name: '添加批注' }).click())
+    await act(async () => page.getByRole('button', { name: '统一修改（1）' }).click())
+    await act(async () => useLayoutStore.setState({ settingsOpen: true }))
+    await act(async () => listeners.get('llm:stream-done')?.({ requestId: pendingRequestId!, fullText: '我走进北塔', finishReason: 'stop' } as never))
+    await expect.element(page.getByRole('region', { name: '批注修改对比' })).toBeInTheDocument()
+    expect(delivered()).toEqual([])
+
+    await act(async () => useLayoutStore.setState({ settingsOpen: false }))
+
+    await vi.waitFor(() => expect(delivered()).toEqual([{ handle: expect.objectContaining({ runId: 'run-1' }) }]))
   })
 
   it('审阅期间原运行的来源变了（例如改了模型设置），接受全部不写入，并说明要取消后重来', async () => {
@@ -818,6 +841,7 @@ it.each([false, true])('明确 handle 恢复原候选；文件改变=%s 时只�
   const documentText = '甲😀乙'
   const documentHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(documentText))), byte => byte.toString(16).padStart(2, '0')).join('')
   invoke.mockImplementation(async (channel: string) => {
+    if (channel === 'editor-inline:delivered') return undefined
     if (channel !== 'editor-inline:read-recovery') throw new Error('恢复不可创建或执行新请求:' + channel)
     return { view: { handle, status: 'completed', artifacts: [{ ...handle, artifactId: '原artifact', textHash: 'proof-hash', text: '替换表情', status: 'completed', compositionEligible: true }] }, modelId: '原模型', sourceStatus: 'current', context: { action: 'refine', kind: 'author-draft', documentText, documentHash, from: 1, to: 3, selectedText: '😀' } }
   })
@@ -829,7 +853,8 @@ it.each([false, true])('明确 handle 恢复原候选；文件改变=%s 时只�
   const view = EditorView.findFromDOM(container.querySelector('.cm-editor')!)!
   expect(view.state.doc.toString()).toBe(changedFile ? documentText : '甲替换表情乙')
   if (changedFile) await expect.element(page.getByText('正文或原目标已变化，结果未应用；你仍可复制预览内容')).toBeVisible()
-  expect(invoke).toHaveBeenCalledTimes(2)
+  expect(invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:read-recovery')).toHaveLength(2)
+  expect(invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:delivered').map(([, request]) => request)).toEqual([{ handle }])
 })
 
 it('明确 handle 恢复按意见改的候选时显示当时的意见', async () => {
@@ -877,7 +902,7 @@ it.each(['unknown', 'discarded'])('已有 %s 请求占用时不显示重新执�
   const documentHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(documentText))), byte => byte.toString(16).padStart(2, '0')).join('')
   invoke.mockImplementation(async () => ({ view: { handle, status, artifacts: [], candidates: [], ledger: { physicalRequests: 1 } }, modelId: '原模型', sourceStatus: 'current', context: { action: 'refine', kind: 'author-draft', documentText, documentHash, from: 0, to: 2, selectedText: documentText } }))
   await act(async () => root.render(<CodeMirrorEditor content={documentText} recoveryHandle={handle} />))
-  await expect.element(page.getByText('恢复的候选尚不可应用，可复制或继续原运行')).toBeVisible()
+  await expect.element(page.getByText('恢复的候选不可应用，只能复制')).toBeVisible()
   await expect.element(page.getByRole('button', { name: '继续原运行' })).not.toBeInTheDocument()
   expect(invoke).toHaveBeenCalledTimes(1)
 })
@@ -914,7 +939,7 @@ it('恢复的批注统一修改结果在替换时先进入逐处审阅，接受�
   await act(async () => page.getByRole('button', { name: '接受全部' }).click())
   await vi.waitFor(() => expect(commit).toHaveBeenCalledWith(documentText, after, annotations))
 })
-it('继续原运行时服务商以上下文超长拒绝，显示对应说明', async () => {
+it('明确 handle 打开还没发出请求的原运行时直接续跑；服务商以上下文超长拒绝，显示对应说明', async () => {
   const handle = { projectId: 'editor-project', epoch: 'editor-epoch', rootActionId: '原预算', runId: '续跑运行' }
   const documentText = '原文'
   const documentHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(documentText))), byte => byte.toString(16).padStart(2, '0')).join('')
@@ -924,8 +949,8 @@ it('继续原运行时服务商以上下文超长拒绝，显示对应说明', a
     ? { run: view, outcome: { status: 'incomplete', content: '', finishReason: 'error', receipt: { finishReason: 'error', failureCode: 'GENERATION_CONTEXT_LENGTH_EXCEEDED' } } }
     : stored)
   await act(async () => root.render(<CodeMirrorEditor content={documentText} recoveryHandle={handle} />))
-  await act(async () => page.getByRole('button', { name: '继续原运行' }).click())
   await expect.element(page.getByText(/提示词超出了模型能接受的长度/)).toBeVisible()
+  expect(invoke.mock.calls.filter(([channel]) => channel === 'editor-inline:execute')).toHaveLength(1)
 })
 
 const CHAPTER_TEXT = `${'守塔人的屋子在灯塔背风的一侧，窗玻璃上积着经年的盐，'.repeat(3)}。\n\n${'他给林岚倒了一杯很淡的茶，自己却只是捧着杯子看着炉火，'.repeat(3)}。`
