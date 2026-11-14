@@ -1,4 +1,3 @@
-// #653 后续：批注坞与审稿报告互斥、只可复制时的「复制」、审阅中途正文变只读的提示。
 import assert from 'node:assert/strict'
 
 import * as chapterView from './pages/chapter-view.mjs'
@@ -22,7 +21,6 @@ async function annotate(page) {
 }
 
 export const ADOCK_SCENARIOS = {
-  /** 1028 宽、第 3 章审稿报告默认展开：加一条批注后报告收起、批注坞出现；从「更多操作」打开报告时坞让位；关掉报告坞带着原批注回来。 */
   'adock-dock-vs-review': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page, shoot }) => {
     const measured = {}
     await page.setViewportSize({ width: 1028, height: 900 })
@@ -58,7 +56,6 @@ export const ADOCK_SCENARIOS = {
     return measured
   } },
 
-  /** 润色生成中作者改了正文：点「替换」不应用，提示只可复制；点「复制」把预览原文交给剪贴板。剪贴板在页面里截住，不写系统剪贴板。 */
   'adock-copy': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page, fake, shoot }) => {
     const measured = {}
     await chapterView.open(page, 3)
@@ -88,7 +85,6 @@ export const ADOCK_SCENARIOS = {
     return measured
   } },
 
-  /** 批注统一修改进入逐处审阅后，作者在动作条上点「重新审稿」，审稿卡在模型那里：点「接受全部」不写入，提示等任务结束；审稿结束后再点就写入。 */
   'adock-readonly': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page, fake, shoot }) => {
     const measured = {}
     fake.replyReview(prompt => prompt.includes(NOTE) ? REVISED : null)

@@ -46,7 +46,7 @@ export type CodeMirrorEditorProps = {
   stickyTopInset?: (editor: HTMLElement) => number
   /** 段落首行缩进两字（只是显示，见 paragraph-indent）。 */
   paragraphIndent?: boolean
-  /** 批注面板的停靠位置；不给时停在编辑器右侧，给 null 时不显示（侧页让给了别的页）。 */
+  /** 批注面板的停靠位置；不给时停在编辑器右侧，给 null 时不显示。 */
   annotationSlot?: HTMLElement | null
   onAnnotationAdded?: () => void
   chapterAnnotations?: boolean

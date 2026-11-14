@@ -106,7 +106,6 @@ function DraftChapter({ tab, filePath, projectKey }: { tab: EditorTab; filePath:
   // 沉浸写作底部的字数进度，目标取设定里的每章字数。
   const target = useProjectStore(s => s.currentProject?.novelConfig.wordsPerChapter) || 0
   const [sheetSlot, setSheetSlot] = useState<HTMLDivElement | null>(null)
-  // 批注坞与审稿、运行侧页同一时间只开一个：别的侧页开着时坞让位，加批注时收起别的侧页。
   const sheetFree = useStageStore(s => s.sheet === null || (s.sheet.kind === 'review' && s.sheet.filePath !== filePath))
 
   const facts = useStageStore(s => draft.meta && s.chapterFacts && session && sameProjectSessionContext(s.chapterFacts.session, session)
